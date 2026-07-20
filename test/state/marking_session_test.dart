@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/state/marking_session.dart';
@@ -8,6 +9,143 @@ Project _project(List<SubtitleLine> lines) =>
     Project(mediaPath: '/tmp/x.mp3', lines: lines);
 
 void main() {
+  test('karaoke settings update together and notify once', () {
+    final session = MarkingSession(_project(const []));
+    var notifications = 0;
+    session.addListener(() => notifications++);
+
+    session.setKaraokeSettings(
+      mode: KaraokeMode.karaokeEasy,
+      preDisplay: KaraokePreDisplay.seconds3,
+    );
+
+    expect(session.project.karaokeMode, KaraokeMode.karaokeEasy);
+    expect(session.project.karaokePreDisplay, KaraokePreDisplay.seconds3);
+    expect(session.advancedMarking, isNull);
+    expect(notifications, 1);
+  });
+
+  group('advanced karaoke marking', () {
+    late MarkingSession session;
+
+    setUp(() {
+      session = MarkingSession(
+        _project(const [
+          SubtitleLine(
+            index: 0,
+            text: 'hello world',
+            startMs: 5000,
+            endMs: 8000,
+          ),
+        ]),
+      );
+    });
+
+    test('persists each accepted unit and undo returns its seek position', () {
+      expect(session.beginAdvancedMarking(0), 3000);
+      expect(session.advancedMarking!.nextUnitIndex, 0);
+
+      expect(session.recordKaraokeUnitStart(5100), isTrue);
+      expect(session.lines[0].startMs, 5100);
+      expect(session.lines[0].karaokeMarks, const [
+        KaraokeMark(unitText: 'hello', startMs: 5100),
+      ]);
+      expect(session.recordKaraokeUnitStart(6200), isTrue);
+      expect(session.advancedMarking!.isComplete, isTrue);
+      expect(session.undoKaraokeUnitStart(), 6200);
+      expect(session.lines[0].karaokeMarks, const [
+        KaraokeMark(unitText: 'hello', startMs: 5100),
+      ]);
+    });
+
+    test('pre-roll clamps at media zero', () {
+      session.setLineTimestamps(0, startMs: 1200, endMs: 4000);
+      expect(session.beginAdvancedMarking(0), 0);
+    });
+
+    test('rejects invalid, out-of-order, after-end, and extra presses', () {
+      expect(session.beginAdvancedMarking(-1), isNull);
+      expect(session.beginAdvancedMarking(1), isNull);
+      expect(session.beginAdvancedMarking(0), 3000);
+      expect(session.recordKaraokeUnitStart(-1), isFalse);
+      expect(session.recordKaraokeUnitStart(8000), isFalse);
+      expect(session.recordKaraokeUnitStart(5100), isTrue);
+      expect(session.recordKaraokeUnitStart(5100), isFalse);
+      expect(session.recordKaraokeUnitStart(8001), isFalse);
+      expect(session.recordKaraokeUnitStart(6200), isTrue);
+      expect(session.recordKaraokeUnitStart(7000), isFalse);
+    });
+
+    test('undoing first unit restores original start and clears marks', () {
+      session.beginAdvancedMarking(0);
+      session.recordKaraokeUnitStart(5100);
+
+      expect(session.undoKaraokeUnitStart(), 5100);
+      expect(session.lines[0].startMs, 5000);
+      expect(session.lines[0].endMs, 8000);
+      expect(session.lines[0].karaokeMarks, isEmpty);
+    });
+
+    test('restart clears marks, restores start, and keeps session active', () {
+      session.beginAdvancedMarking(0);
+      session.recordKaraokeUnitStart(5100);
+      session.recordKaraokeUnitStart(6200);
+
+      expect(session.restartAdvancedMarking(), 3000);
+      expect(session.advancedMarking!.nextUnitIndex, 0);
+      expect(session.lines[0].startMs, 5000);
+      expect(session.lines[0].karaokeMarks, isEmpty);
+    });
+
+    test('cancel preserves accepted marks and rejects later presses', () {
+      session.beginAdvancedMarking(0);
+      session.recordKaraokeUnitStart(5100);
+
+      session.cancelAdvancedMarking();
+
+      expect(session.advancedMarking, isNull);
+      expect(session.lines[0].karaokeMarks, hasLength(1));
+      expect(session.recordKaraokeUnitStart(6200), isFalse);
+    });
+
+    test('switching modes cancels transient state but preserves marks', () {
+      session.beginAdvancedMarking(0);
+      session.recordKaraokeUnitStart(5100);
+
+      session.setKaraokeSettings(
+        mode: KaraokeMode.karaokeEasy,
+        preDisplay: KaraokePreDisplay.off,
+      );
+
+      expect(session.advancedMarking, isNull);
+      expect(session.lines[0].karaokeMarks, hasLength(1));
+    });
+
+    test('direct timestamp edits cancel state and invalidate marks', () {
+      session.beginAdvancedMarking(0);
+      session.recordKaraokeUnitStart(5100);
+
+      session.setLineTimestamps(0, startMs: 5200, endMs: 8000);
+
+      expect(session.advancedMarking, isNull);
+      expect(session.lines[0].karaokeMarks, isEmpty);
+    });
+
+    test('line import and project load cancel transient state', () {
+      session.beginAdvancedMarking(0);
+      session.importLines(const [SubtitleLine(index: 0, text: 'new')]);
+      expect(session.advancedMarking, isNull);
+
+      session.loadProject(
+        _project(const [
+          SubtitleLine(index: 0, text: 'loaded', startMs: 1, endMs: 2),
+        ]),
+      );
+      expect(session.advancedMarking, isNull);
+      expect(session.lines.single.text, 'loaded');
+    });
+  });
+
   test('currentIndex starts at the first unmarked line', () {
     final session = MarkingSession(
       _project(const [
