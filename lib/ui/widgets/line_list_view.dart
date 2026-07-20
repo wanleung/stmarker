@@ -18,6 +18,7 @@ class LineListView extends StatefulWidget {
 class _LineListViewState extends State<LineListView> {
   final _scrollController = ScrollController();
   static const _rowHeight = 48.0;
+  int? _lastScrolledIndex;
 
   @override
   void dispose() {
@@ -41,12 +42,13 @@ class _LineListViewState extends State<LineListView> {
     final currentIndex = session.currentIndex;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (currentIndex != null && _scrollController.hasClients) {
+      if (currentIndex != null && currentIndex != _lastScrolledIndex && _scrollController.hasClients) {
         _scrollController.animateTo(
           currentIndex * _rowHeight,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
+        _lastScrolledIndex = currentIndex;
       }
     });
 
