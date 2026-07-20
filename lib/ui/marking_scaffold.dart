@@ -7,6 +7,7 @@ import '../keyboard/marking_key_handler.dart';
 import '../player/playback_controls.dart';
 import '../state/marking_session.dart';
 import '../models/subtitle_line.dart';
+import 'review_active_line.dart';
 import 'widgets/line_list_view.dart';
 import 'widgets/player_controls_bar.dart';
 
@@ -38,6 +39,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   final _focusNode = FocusNode();
   MarkingKeyHandler? _keyHandler;
   int _reviewIndex = 0;
+  int? _reviewFollowIndex;
+  bool _reviewFollowingPlayback = false;
   final Set<int> _reviewFlagged = {};
   int? _reviewStopAtMs;
   int _reviewOperationGeneration = 0;
@@ -69,6 +72,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     _reviewLines = session.lines;
     _invalidateReviewOperations();
     _reviewStopAtMs = null;
+    _reviewFollowingPlayback = false;
+    _reviewFollowIndex = null;
     _reviewFlagged.clear();
     if (mounted && widget.reviewMode) setState(() {});
   }
@@ -91,6 +96,24 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       _reviewPlaybackOwners.remove(widget.controls);
       unawaited(widget.controls.pause());
     }
+    if (widget.reviewMode && widget.controls.isPlaying) {
+      final activeIndex = findActiveReviewLine(
+        session.lines,
+        widget.controls.positionMs,
+      );
+      if (!_reviewFollowingPlayback || activeIndex != _reviewFollowIndex) {
+        setState(() {
+          _reviewFollowingPlayback = true;
+          _reviewFollowIndex = activeIndex;
+          if (activeIndex != null) _reviewIndex = activeIndex;
+        });
+      }
+    } else if (_reviewFollowingPlayback) {
+      setState(() {
+        _reviewFollowingPlayback = false;
+        _reviewFollowIndex = null;
+      });
+    }
   }
 
   @override
@@ -102,16 +125,22 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       oldWidget.controls.removeListener(_handleControlsChanged);
       widget.controls.addListener(_handleControlsChanged);
       _keyHandler = null;
+      _reviewFollowingPlayback = false;
+      _reviewFollowIndex = null;
     }
     if (!oldWidget.reviewMode && widget.reviewMode) {
       _invalidateReviewOperations();
       _reviewIndex = 0;
       _reviewFlagged.clear();
       _reviewStopAtMs = null;
+      _reviewFollowingPlayback = false;
+      _reviewFollowIndex = null;
       _reviewLines = _session?.lines;
     } else if (oldWidget.reviewMode && !widget.reviewMode) {
       _invalidateReviewOperations();
       _reviewStopAtMs = null;
+      _reviewFollowingPlayback = false;
+      _reviewFollowIndex = null;
       _reviewFlagged.clear();
       unawaited(widget.controls.pause());
     }
@@ -120,6 +149,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   @override
   void dispose() {
     _invalidateReviewOperations();
+    _reviewFollowingPlayback = false;
+    _reviewFollowIndex = null;
     _session?.removeListener(_handleSessionChanged);
     widget.controls.removeListener(_handleControlsChanged);
     _focusNode.dispose();
@@ -193,6 +224,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   void _finishReview(MarkingSession session) {
     _invalidateReviewOperations();
     _reviewStopAtMs = null;
+    _reviewFollowingPlayback = false;
+    _reviewFollowIndex = null;
     unawaited(widget.controls.pause());
     final reviewIndex = _safeReviewIndex(session);
     session.clearLineTimestamps(
@@ -286,7 +319,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<MarkingSession>();
-    final reviewIndex = _safeReviewIndex(session);
+    final manualReviewIndex = _safeReviewIndex(session);
+    final displayReviewIndex = _reviewFollowingPlayback
+        ? _reviewFollowIndex
+        : manualReviewIndex;
+    final reviewText = displayReviewIndex == null
+        ? ''
+        : session.lines[displayReviewIndex].text;
     _keyHandler ??= MarkingKeyHandler(
       session: session,
       getPositionMs: () => widget.controls.positionMs,
@@ -304,13 +343,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
         children: [
           if (widget.videoArea != null)
             SizedBox(height: 240, child: widget.videoArea),
-          if (widget.reviewMode && reviewIndex != null)
-            _ReviewSubtitlePanel(text: session.lines[reviewIndex].text),
+          if (widget.reviewMode && manualReviewIndex != null)
+            _ReviewSubtitlePanel(text: reviewText),
           ExcludeFocus(child: PlayerControlsBar(controls: widget.controls)),
           if (widget.reviewMode) _buildReviewBar(session),
           Expanded(
             child: LineListView(
-              selectedIndex: widget.reviewMode ? reviewIndex : null,
+              selectedIndex: widget.reviewMode ? displayReviewIndex : null,
               flaggedIndices: widget.reviewMode ? _reviewFlagged : const {},
               onRowTap: widget.reviewMode
                   ? (index) => _selectReviewLine(session, index)

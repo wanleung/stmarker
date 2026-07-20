@@ -228,6 +228,168 @@ void main() {
     expect(controls.playingValue, isFalse);
   });
 
+  testWidgets(
+    'review auto-follow shows and highlights the active line and blanks gaps',
+    (tester) async {
+      final controls = FakePlaybackControls();
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          lines: [
+            SubtitleLine(index: 0, text: 'first', startMs: 500, endMs: 900),
+            SubtitleLine(index: 1, text: 'second', startMs: 1200, endMs: 1800),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: session,
+            child: Scaffold(
+              body: MarkingScaffold(controls: controls, reviewMode: true),
+            ),
+          ),
+        ),
+      );
+
+      await controls.play();
+      controls.seekTestPosition(1250);
+      await tester.pump();
+
+      final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+      final secondRow = find.byKey(const ValueKey('line-row-1'));
+      final secondRowMaterial = find.ancestor(
+        of: secondRow,
+        matching: find.byType(Material),
+      );
+      expect(
+        find.descendant(of: panel, matching: find.text('second')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<Material>(secondRowMaterial.first).color,
+        Theme.of(
+          tester.element(secondRowMaterial.first),
+        ).colorScheme.primaryContainer,
+      );
+
+      controls.seekTestPosition(1000);
+      await tester.pump();
+      expect(panel, findsOneWidget);
+      expect(
+        find.descendant(of: panel, matching: find.text('first')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: panel, matching: find.text('second')),
+        findsNothing,
+      );
+      final firstRowMaterial = find.ancestor(
+        of: find.byKey(const ValueKey('line-row-0')),
+        matching: find.byType(Material),
+      );
+      expect(
+        tester.widget<Material>(firstRowMaterial.first).color,
+        isNot(
+          Theme.of(
+            tester.element(firstRowMaterial.first),
+          ).colorScheme.primaryContainer,
+        ),
+      );
+      expect(
+        tester.widget<Material>(secondRowMaterial.first).color,
+        isNot(
+          Theme.of(
+            tester.element(secondRowMaterial.first),
+          ).colorScheme.primaryContainer,
+        ),
+      );
+
+      await controls.pause();
+      await tester.pump();
+      expect(
+        find.descendant(of: panel, matching: find.text('second')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('review auto-follow updates immediately after a direct seek', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 500, endMs: 900),
+          SubtitleLine(index: 1, text: 'second', startMs: 1200, endMs: 1800),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    await controls.play();
+    controls.seekTestPosition(600);
+    await tester.pump();
+    final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+    expect(
+      find.descendant(of: panel, matching: find.text('first')),
+      findsOneWidget,
+    );
+
+    controls.seekTestPosition(1250);
+    await tester.pump();
+    expect(
+      find.descendant(of: panel, matching: find.text('second')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'review auto-follow preserves manual row selection while paused',
+    (tester) async {
+      final controls = FakePlaybackControls();
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          lines: [
+            SubtitleLine(index: 0, text: 'first', startMs: 500, endMs: 900),
+            SubtitleLine(index: 1, text: 'second', startMs: 1200, endMs: 1800),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: session,
+            child: Scaffold(
+              body: MarkingScaffold(controls: controls, reviewMode: true),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('line-row-1')));
+      await tester.pump();
+
+      final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+      expect(
+        find.descendant(of: panel, matching: find.text('second')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('finishing review clears all lines flagged for redo', (
     tester,
   ) async {
