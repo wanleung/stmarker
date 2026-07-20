@@ -16,6 +16,27 @@ class MarkingKeyHandler {
   final int redoFallbackOffsetMs;
 
   bool handleKeyEvent(KeyEvent event) {
+    final advanced = session.advancedMarking;
+    if (advanced != null) {
+      if (event.logicalKey == LogicalKeyboardKey.space &&
+          event is KeyDownEvent) {
+        session.recordKaraokeUnitStart(getPositionMs());
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.backspace &&
+          event is KeyDownEvent) {
+        final target = session.undoKaraokeUnitStart();
+        seekTo(
+          target ??
+              (advanced.originalStartMs - 2000).clamp(
+                0,
+                advanced.originalStartMs,
+              ),
+        );
+        return true;
+      }
+      return false;
+    }
     if (event.logicalKey == LogicalKeyboardKey.space) {
       if (event is KeyDownEvent) {
         session.markStart(getPositionMs());

@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../keyboard/marking_key_handler.dart';
+import '../karaoke/karaoke_models.dart';
 import '../subtitle_fonts/subtitle_font_catalog.dart';
 import '../player/playback_controls.dart';
 import '../state/marking_session.dart';
 import '../models/subtitle_line.dart';
 import 'review_active_line.dart';
+import 'karaoke_settings_dialog.dart';
 import 'subtitle_appearance_dialog.dart';
 import 'widgets/line_list_view.dart';
 import 'widgets/player_controls_bar.dart';
@@ -46,6 +48,9 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   final Set<int> _reviewFlagged = {};
   int? _reviewStopAtMs;
   int _reviewOperationGeneration = 0;
+  int _karaokeOperationGeneration = 0;
+  final Map<PlaybackControls, int> _karaokePlaybackOwners = {};
+  bool _hadAdvancedPass = false;
   final Map<PlaybackControls, int> _reviewPlaybackOwners = {};
   MarkingSession? _session;
   List<SubtitleLine>? _reviewLines;
@@ -70,7 +75,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 
   void _handleSessionChanged() {
     final session = _session;
-    if (session == null || identical(_reviewLines, session.lines)) return;
+    if (session == null) return;
+    if (session.advancedMarking == null && _hadAdvancedPass) {
+      _hadAdvancedPass = false;
+      _invalidateKaraokeOperations();
+      unawaited(widget.controls.pause());
+    }
+    if (identical(_reviewLines, session.lines)) return;
     _reviewLines = session.lines;
     _invalidateReviewOperations();
     _resetExactReviewPlayback();
@@ -83,6 +94,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   void _invalidateReviewOperations() {
     _reviewOperationGeneration++;
   }
+
+  void _invalidateKaraokeOperations() => _karaokeOperationGeneration++;
 
   void _resetExactReviewPlayback({
     PlaybackControls? controls,
@@ -137,6 +150,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   void didUpdateWidget(covariant MarkingScaffold oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controls != widget.controls) {
+      _invalidateKaraokeOperations();
+      _session?.cancelAdvancedMarking();
       _invalidateReviewOperations();
       _resetExactReviewPlayback(controls: oldWidget.controls);
       unawaited(oldWidget.controls.pause());
@@ -155,6 +170,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       _reviewFollowIndex = null;
       _reviewLines = _session?.lines;
     } else if (oldWidget.reviewMode && !widget.reviewMode) {
+      _cancelAdvancedPass();
       _invalidateReviewOperations();
       _resetExactReviewPlayback();
       _reviewFollowingPlayback = false;
@@ -166,6 +182,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 
   @override
   void dispose() {
+    _invalidateKaraokeOperations();
+    _session?.cancelAdvancedMarking();
     _invalidateReviewOperations();
     _resetExactReviewPlayback();
     _reviewFollowingPlayback = false;
@@ -276,6 +294,91 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     );
   }
 
+  Future<void> _editKaraokeSettings(MarkingSession session) async {
+    final result = await showKaraokeSettingsDialog(
+      context,
+      initial: KaraokeSettings(
+        mode: session.project.karaokeMode,
+        preDisplay: session.project.karaokePreDisplay,
+      ),
+    );
+    if (result == null || !mounted) return;
+    _invalidateKaraokeOperations();
+    session.setKaraokeSettings(
+      mode: result.mode,
+      preDisplay: result.preDisplay,
+    );
+  }
+
+  bool _isCurrentKaraokeOperation(
+    int operation,
+    PlaybackControls controls,
+    MarkingSession session,
+  ) =>
+      mounted &&
+      widget.reviewMode &&
+      operation == _karaokeOperationGeneration &&
+      identical(widget.controls, controls) &&
+      identical(_session, session) &&
+      session.advancedMarking != null;
+
+  Future<void> _startAdvancedPass(MarkingSession session, int lineIndex) async {
+    _invalidateReviewOperations();
+    final target = session.beginAdvancedMarking(lineIndex);
+    if (target == null) return;
+    _hadAdvancedPass = true;
+    _focusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && session.advancedMarking != null) _focusNode.requestFocus();
+    });
+    await _playAdvancedPassFrom(session, target);
+    if (mounted && session.advancedMarking != null) _focusNode.requestFocus();
+  }
+
+  Future<void> _playAdvancedPassFrom(MarkingSession session, int target) async {
+    final operation = ++_karaokeOperationGeneration;
+    final controls = widget.controls;
+    await controls.pause();
+    if (!_isCurrentKaraokeOperation(operation, controls, session)) return;
+    await controls.seek(target);
+    if (!_isCurrentKaraokeOperation(operation, controls, session)) return;
+    _karaokePlaybackOwners[controls] = operation;
+    await controls.play();
+    if (_isCurrentKaraokeOperation(operation, controls, session)) {
+      if (_karaokePlaybackOwners[controls] == operation) {
+        _karaokePlaybackOwners.remove(controls);
+      }
+    } else if (_karaokePlaybackOwners[controls] == operation) {
+      _karaokePlaybackOwners.remove(controls);
+      await controls.pause();
+    }
+  }
+
+  void _restartAdvancedPass(MarkingSession session) {
+    _invalidateKaraokeOperations();
+    final target = session.restartAdvancedMarking();
+    _focusNode.requestFocus();
+    if (target != null) unawaited(_playAdvancedPassFrom(session, target));
+  }
+
+  void _cancelAdvancedPass() {
+    _invalidateKaraokeOperations();
+    _hadAdvancedPass = false;
+    _session?.cancelAdvancedMarking();
+    unawaited(widget.controls.pause());
+  }
+
+  bool _handleMarkingKey(KeyEvent event) {
+    final wasComplete = _session?.advancedMarking?.isComplete ?? false;
+    final handled = _keyHandler?.handleKeyEvent(event) ?? false;
+    final isComplete = _session?.advancedMarking?.isComplete ?? false;
+    if (handled && !wasComplete && isComplete) {
+      _invalidateKaraokeOperations();
+      unawaited(widget.controls.pause());
+    }
+    return handled;
+  }
+
   Widget _buildReviewBar(MarkingSession session) {
     final count = session.lines.length;
     final reviewIndex = _safeReviewIndex(session);
@@ -330,6 +433,24 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
               onPressed: () => _editSubtitleAppearance(session),
               icon: const Icon(Icons.format_size),
             ),
+            IconButton(
+              key: const ValueKey('review-karaoke-settings'),
+              tooltip: 'Karaoke settings',
+              onPressed: () => _editKaraokeSettings(session),
+              icon: const Icon(Icons.lyrics),
+            ),
+            if (reviewIndex != null &&
+                session.project.karaokeMode == KaraokeMode.karaokeAdvanced &&
+                session.lines[reviewIndex].isFullyMarked &&
+                session.lines[reviewIndex].endMs! >
+                    session.lines[reviewIndex].startMs!)
+              FilledButton.tonal(
+                key: const ValueKey('mark-words'),
+                onPressed: session.advancedMarking == null
+                    ? () => _startAdvancedPass(session, reviewIndex)
+                    : null,
+                child: const Text('Mark words'),
+              ),
             FilledButton(
               key: const ValueKey('review-finish'),
               onPressed: () => _finishReview(session),
@@ -378,12 +499,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       getPositionMs: () => widget.controls.positionMs,
       seekTo: (ms) => widget.controls.seek(ms),
     );
-
+    final advanced = session.advancedMarking;
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: (node, event) =>
-          (!widget.reviewMode && (_keyHandler?.handleKeyEvent(event) ?? false))
+          ((!widget.reviewMode || session.advancedMarking != null) &&
+              _handleMarkingKey(event))
           ? KeyEventResult.handled
           : KeyEventResult.ignored,
       child: Column(
@@ -399,7 +521,33 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
               fontSize: session.project.subtitleFontSize,
             ),
           ExcludeFocus(child: PlayerControlsBar(controls: widget.controls)),
-          if (widget.reviewMode) _buildReviewBar(session),
+          if (widget.reviewMode) ExcludeFocus(child: _buildReviewBar(session)),
+          if (advanced != null)
+            Material(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      advanced.isComplete
+                          ? 'Words marked'
+                          : 'Press Space: ${advanced.tokens[advanced.nextUnitIndex].text.trimLeft()}',
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton(
+                      onPressed: () => _restartAdvancedPass(session),
+                      child: const Text('Restart'),
+                    ),
+                    TextButton(
+                      onPressed: _cancelAdvancedPass,
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Expanded(
             child: LineListView(
               selectedIndex: widget.reviewMode ? displayReviewIndex : null,

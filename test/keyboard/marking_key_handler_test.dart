@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stmarker/keyboard/marking_key_handler.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/state/marking_session.dart';
@@ -24,6 +25,51 @@ KeyDownEvent _backspaceDown() => const KeyDownEvent(
 );
 
 void main() {
+  test('Advanced consumes Space down once and ignores Space up', () {
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(index: 0, text: 'one two', startMs: 3000, endMs: 8000),
+        ],
+      ),
+    );
+    session.beginAdvancedMarking(0);
+    var position = 5100;
+    final handler = MarkingKeyHandler(
+      session: session,
+      getPositionMs: () => position,
+      seekTo: (_) {},
+    );
+    expect(handler.handleKeyEvent(_spaceDown()), isTrue);
+    position = 5200;
+    expect(handler.handleKeyEvent(_spaceUp()), isFalse);
+    expect(session.advancedMarking?.recordedStarts, [5100]);
+  });
+
+  test('Advanced Backspace undoes a unit and seeks to its position', () {
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(index: 0, text: 'one two', startMs: 3000, endMs: 8000),
+        ],
+      ),
+    );
+    session.beginAdvancedMarking(0);
+    session.recordKaraokeUnitStart(5100);
+    int? seekedTo;
+    final handler = MarkingKeyHandler(
+      session: session,
+      getPositionMs: () => 6000,
+      seekTo: (ms) => seekedTo = ms,
+    );
+    expect(handler.handleKeyEvent(_backspaceDown()), isTrue);
+    expect(seekedTo, 5100);
+    expect(session.advancedMarking?.recordedStarts, isEmpty);
+  });
   test('space down marks the current line start at the live position', () {
     final session = MarkingSession(
       const Project(
