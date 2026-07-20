@@ -133,6 +133,22 @@ x86_64; other architectures need a matching `linuxdeploy` build.
 6. Use **Subtitle appearance** to choose the typeface and size, then save the
    work as an `.stmproj` project, export SRT or ASS, or export a subtitled video.
 
+## Subtitle appearance settings
+
+Subtitle appearance is configured from review mode rather than a separate
+global settings screen:
+
+1. Select **Review marked lines** in the toolbar.
+2. Select **Subtitle appearance** (the text-size icon) in the review panel.
+3. Choose a bundled Noto Sans, Serif, or Monospace face and a font size from
+   16 to 64, then select **Save**.
+
+The selected font and size are stored in the `.stmproj` project. ASS exports
+retain both settings and include the selected font in the companion fonts
+folder. Burned-in video exports render with the selected appearance. SRT files
+and selectable subtitle tracks do not carry these settings, so their appearance
+is controlled by the video player.
+
 Invalid ranges and overlaps are shown in the line list. Export remains
 possible after acknowledging warnings; incomplete lines are omitted from the
 generated subtitle file. SRT does not store font or size settings, so its
