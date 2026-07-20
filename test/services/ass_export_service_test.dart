@@ -122,41 +122,30 @@ void main() {
   });
 
   test(
-    'failure cleanup leaves unrelated similarly named siblings untouched',
+    'atomically claims a transaction directory without touching collisions',
     () async {
       await _writeOldPackage(outputPath);
-      final unrelated = File(
-        '${temporaryDirectory.path}/unrelated.ass-export-stage-keep',
+      final collision = Directory(
+        '${temporaryDirectory.path}/.ass-export-txn-owned',
       );
-      await unrelated.writeAsString('keep me');
-      final fileSystem = _FaultFileSystem(
-        failWhen: (operation, path) =>
-            operation == 'writeBytes' && path.endsWith('/OFL.txt'),
+      await collision.create();
+      final marker = File('${collision.path}/marker');
+      await marker.writeAsString('keep me');
+      final fileSystem = _FaultFileSystem(failWhen: (_, _) => false);
+
+      await AssExportService(fileSystem: fileSystem).export(
+        outputPath: outputPath,
+        content: 'new ASS',
+        face: face,
+        loadAsset: loadAsset,
       );
 
-      await expectLater(
-        AssExportService(fileSystem: fileSystem).export(
-          outputPath: outputPath,
-          content: 'new ASS',
-          face: face,
-          loadAsset: loadAsset,
-        ),
-        throwsA(isA<FileSystemException>()),
+      expect(fileSystem.createdTemporaryDirectories, 1);
+      expect(await marker.readAsString(), 'keep me');
+      expect(
+        (await _transactionDirectories(outputPath)).map((entry) => entry.path),
+        <String>[collision.path],
       );
-
-      expect(await File(outputPath).readAsString(), 'old ASS');
-      expect(await unrelated.readAsString(), 'keep me');
-      final generatedForDestination = await temporaryDirectory
-          .list()
-          .where(
-            (entity) =>
-                entity.path.contains('name.ass-export-stage-') ||
-                entity.path.contains('name.ass-export-backup-') ||
-                entity.path.contains('name_fonts.ass-export-stage-') ||
-                entity.path.contains('name_fonts.ass-export-backup-'),
-          )
-          .toList();
-      expect(generatedForDestination, isEmpty);
     },
   );
 
@@ -175,12 +164,12 @@ void main() {
     (
       name: 'staged ASS install rename',
       when: (operation, path) =>
-          operation == 'renameFile' && path.contains('.ass-export-stage-'),
+          operation == 'renameFile' && path.endsWith('/staged.ass'),
     ),
     (
       name: 'staged companion install rename',
       when: (operation, path) =>
-          operation == 'renameDirectory' && path.contains('.ass-export-stage-'),
+          operation == 'renameDirectory' && path.endsWith('/staged_fonts'),
     ),
   ]) {
     test('${failure.name} preserves an existing package', () async {
@@ -200,10 +189,122 @@ void main() {
       await _expectOldPackageAndNoGeneratedSiblings(outputPath);
     });
   }
+
+  for (final oldDestination in <String>['ASS only', 'companions only']) {
+    test('failure restores the $oldDestination destination', () async {
+      if (oldDestination == 'ASS only') {
+        await File(outputPath).writeAsString('old ASS');
+      } else {
+        await _writeOldCompanions(outputPath);
+      }
+      final fileSystem = _FaultFileSystem(
+        failWhen: (operation, path) =>
+            operation == 'renameDirectory' && path.endsWith('/staged_fonts'),
+      );
+
+      await expectLater(
+        AssExportService(fileSystem: fileSystem).export(
+          outputPath: outputPath,
+          content: 'new ASS',
+          face: face,
+          loadAsset: loadAsset,
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      if (oldDestination == 'ASS only') {
+        expect(await File(outputPath).readAsString(), 'old ASS');
+        expect(
+          await Directory(
+            AssExportService.companionDirectoryFor(outputPath),
+          ).exists(),
+          isFalse,
+        );
+      } else {
+        expect(await File(outputPath).exists(), isFalse);
+        await _expectOldCompanions(outputPath);
+      }
+      expect(await _transactionDirectories(outputPath), isEmpty);
+    });
+  }
+
+  test(
+    'rollback continues after delete failure and reports original error',
+    () async {
+      await _writeOldPackage(outputPath);
+      final fileSystem = _FaultFileSystem(
+        failWhen: (operation, path) =>
+            (operation == 'renameDirectory' &&
+                path.endsWith('/staged_fonts')) ||
+            (operation == 'deleteFile' && path == outputPath),
+      );
+
+      await expectLater(
+        AssExportService(fileSystem: fileSystem).export(
+          outputPath: outputPath,
+          content: 'new ASS',
+          face: face,
+          loadAsset: loadAsset,
+        ),
+        throwsA(
+          isA<FileSystemException>().having(
+            (error) => error.message,
+            'message',
+            contains('renameDirectory'),
+          ),
+        ),
+      );
+
+      await _expectOldPackageAndNoGeneratedSiblings(outputPath);
+    },
+  );
+
+  test(
+    'rollback continues after restore failure and retains the backup',
+    () async {
+      await _writeOldPackage(outputPath);
+      final fileSystem = _FaultFileSystem(
+        failWhen: (operation, path) =>
+            (operation == 'renameDirectory' &&
+                path.endsWith('/staged_fonts')) ||
+            (operation == 'renameDirectory' && path.endsWith('/backup_fonts')),
+      );
+
+      await expectLater(
+        AssExportService(fileSystem: fileSystem).export(
+          outputPath: outputPath,
+          content: 'new ASS',
+          face: face,
+          loadAsset: loadAsset,
+        ),
+        throwsA(
+          isA<FileSystemException>().having(
+            (error) => error.path,
+            'path',
+            contains('staged_fonts'),
+          ),
+        ),
+      );
+
+      expect(await File(outputPath).readAsString(), 'old ASS');
+      final transactions = await _transactionDirectories(outputPath);
+      expect(transactions, hasLength(1));
+      expect(
+        await File(
+          '${transactions.single.path}/backup_fonts/OFL.txt',
+        ).readAsString(),
+        'old licence',
+      );
+    },
+  );
 }
 
 Future<void> _writeOldPackage(String outputPath) async {
   await File(outputPath).writeAsString('old ASS');
+  await _writeOldCompanions(outputPath);
+}
+
+Future<void> _writeOldCompanions(String outputPath) async {
   final companion = Directory(
     AssExportService.companionDirectoryFor(outputPath),
   );
@@ -212,8 +313,7 @@ Future<void> _writeOldPackage(String outputPath) async {
   await File('${companion.path}/OFL.txt').writeAsString('old licence');
 }
 
-Future<void> _expectOldPackageAndNoGeneratedSiblings(String outputPath) async {
-  expect(await File(outputPath).readAsString(), 'old ASS');
+Future<void> _expectOldCompanions(String outputPath) async {
   final companionPath = AssExportService.companionDirectoryFor(outputPath);
   expect(await File('$companionPath/old-font.otf').readAsBytes(), <int>[
     9,
@@ -221,24 +321,34 @@ Future<void> _expectOldPackageAndNoGeneratedSiblings(String outputPath) async {
     7,
   ]);
   expect(await File('$companionPath/OFL.txt').readAsString(), 'old licence');
-
-  final parent = Directory(outputPath).parent;
-  final generated = await parent
-      .list()
-      .where(
-        (entity) =>
-            entity.path.contains('.ass-export-stage-') ||
-            entity.path.contains('.ass-export-backup-'),
-      )
-      .toList();
-  expect(generated, isEmpty);
 }
+
+Future<void> _expectOldPackageAndNoGeneratedSiblings(String outputPath) async {
+  expect(await File(outputPath).readAsString(), 'old ASS');
+  await _expectOldCompanions(outputPath);
+  expect(await _transactionDirectories(outputPath), isEmpty);
+}
+
+Future<List<Directory>> _transactionDirectories(String outputPath) async =>
+    Directory(outputPath).parent
+        .list()
+        .where(
+          (entity) =>
+              entity is Directory &&
+              entity.path
+                  .split(Platform.pathSeparator)
+                  .last
+                  .startsWith('.ass-export-txn-'),
+        )
+        .cast<Directory>()
+        .toList();
 
 final class _FaultFileSystem extends LocalAssExportFileSystem {
   _FaultFileSystem({required this.failWhen});
 
   final bool Function(String operation, String path) failWhen;
   final Set<String> _failedOperations = <String>{};
+  var createdTemporaryDirectories = 0;
 
   void _maybeFail(String operation, String path) {
     final key = '$operation:$path';
@@ -254,6 +364,15 @@ final class _FaultFileSystem extends LocalAssExportFileSystem {
   }
 
   @override
+  Future<String> createTemporaryDirectory(
+    String parentPath,
+    String prefix,
+  ) async {
+    createdTemporaryDirectories++;
+    return super.createTemporaryDirectory(parentPath, prefix);
+  }
+
+  @override
   Future<void> renameFile(String path, String newPath) async {
     _maybeFail('renameFile', path);
     await super.renameFile(path, newPath);
@@ -263,5 +382,17 @@ final class _FaultFileSystem extends LocalAssExportFileSystem {
   Future<void> renameDirectory(String path, String newPath) async {
     _maybeFail('renameDirectory', path);
     await super.renameDirectory(path, newPath);
+  }
+
+  @override
+  Future<void> deleteFile(String path) async {
+    _maybeFail('deleteFile', path);
+    await super.deleteFile(path);
+  }
+
+  @override
+  Future<void> deleteDirectory(String path, {bool recursive = false}) async {
+    _maybeFail('deleteDirectory', path);
+    await super.deleteDirectory(path, recursive: recursive);
   }
 }

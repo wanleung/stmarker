@@ -11,6 +11,8 @@ abstract interface class AssExportFileSystem {
 
   Future<void> createDirectory(String path, {bool recursive = false});
 
+  Future<String> createTemporaryDirectory(String parentPath, String prefix);
+
   Future<void> writeBytes(String path, List<int> bytes);
 
   Future<void> renameFile(String path, String newPath);
@@ -34,6 +36,15 @@ class LocalAssExportFileSystem implements AssExportFileSystem {
   @override
   Future<void> createDirectory(String path, {bool recursive = false}) async {
     await Directory(path).create(recursive: recursive);
+  }
+
+  @override
+  Future<String> createTemporaryDirectory(
+    String parentPath,
+    String prefix,
+  ) async {
+    final directory = await Directory(parentPath).createTemp(prefix);
+    return directory.path;
   }
 
   @override
@@ -67,8 +78,6 @@ final class AssExportService {
 
   final AssExportFileSystem fileSystem;
 
-  static int _uniqueSequence = 0;
-
   static String companionDirectoryFor(String outputPath) {
     final separatorIndex = _lastSeparatorIndex(outputPath);
     final extensionIndex = outputPath.lastIndexOf('.');
@@ -94,12 +103,14 @@ final class AssExportService {
     final companionPath = companionDirectoryFor(outputPath);
     final parentPath = _parentOf(outputPath);
     await fileSystem.createDirectory(parentPath, recursive: true);
-
-    final token = await _uniqueToken(outputPath, companionPath);
-    final stagedOutputPath = '$outputPath.ass-export-stage-$token';
-    final stagedCompanionPath = '$companionPath.ass-export-stage-$token';
-    final backupOutputPath = '$outputPath.ass-export-backup-$token';
-    final backupCompanionPath = '$companionPath.ass-export-backup-$token';
+    final transactionPath = await fileSystem.createTemporaryDirectory(
+      parentPath,
+      '.ass-export-txn-',
+    );
+    final stagedOutputPath = '$transactionPath/staged.ass';
+    final stagedCompanionPath = '$transactionPath/staged_fonts';
+    final backupOutputPath = '$transactionPath/backup.ass';
+    final backupCompanionPath = '$transactionPath/backup_fonts';
 
     var outputBackedUp = false;
     var companionBackedUp = false;
@@ -130,6 +141,7 @@ final class AssExportService {
       companionInstalled = true;
     } catch (error, stackTrace) {
       await _rollback(
+        transactionPath: transactionPath,
         outputPath: outputPath,
         companionPath: companionPath,
         backupOutputPath: backupOutputPath,
@@ -139,20 +151,14 @@ final class AssExportService {
         outputInstalled: outputInstalled,
         companionInstalled: companionInstalled,
       );
-      await _deleteFileIfPresent(stagedOutputPath);
-      await _deleteDirectoryIfPresent(stagedCompanionPath);
       Error.throwWithStackTrace(error, stackTrace);
     }
 
-    if (outputBackedUp) {
-      await fileSystem.deleteFile(backupOutputPath);
-    }
-    if (companionBackedUp) {
-      await fileSystem.deleteDirectory(backupCompanionPath, recursive: true);
-    }
+    await fileSystem.deleteDirectory(transactionPath, recursive: true);
   }
 
   Future<void> _rollback({
+    required String transactionPath,
     required String outputPath,
     required String companionPath,
     required String backupOutputPath,
@@ -163,40 +169,42 @@ final class AssExportService {
     required bool companionInstalled,
   }) async {
     if (companionInstalled) {
-      await _deleteDirectoryIfPresent(companionPath);
+      await _bestEffort(() => _deleteDirectoryIfPresent(companionPath));
     }
     if (outputInstalled) {
-      await _deleteFileIfPresent(outputPath);
+      await _bestEffort(() => _deleteFileIfPresent(outputPath));
     }
     if (outputBackedUp) {
-      await fileSystem.renameFile(backupOutputPath, outputPath);
+      await _bestEffort(
+        () => fileSystem.renameFile(backupOutputPath, outputPath),
+      );
     }
     if (companionBackedUp) {
-      await fileSystem.renameDirectory(backupCompanionPath, companionPath);
+      await _bestEffort(
+        () => fileSystem.renameDirectory(backupCompanionPath, companionPath),
+      );
+    }
+
+    var hasRecoverableBackup = true;
+    try {
+      hasRecoverableBackup =
+          await fileSystem.fileExists(backupOutputPath) ||
+          await fileSystem.directoryExists(backupCompanionPath);
+    } catch (_) {
+      // Keep the transaction directory when backup ownership is uncertain.
+    }
+    if (!hasRecoverableBackup) {
+      await _bestEffort(
+        () => fileSystem.deleteDirectory(transactionPath, recursive: true),
+      );
     }
   }
 
-  Future<String> _uniqueToken(String outputPath, String companionPath) async {
-    while (true) {
-      final token =
-          '${DateTime.now().microsecondsSinceEpoch}-${_uniqueSequence++}';
-      final candidates = <String>[
-        '$outputPath.ass-export-stage-$token',
-        '$companionPath.ass-export-stage-$token',
-        '$outputPath.ass-export-backup-$token',
-        '$companionPath.ass-export-backup-$token',
-      ];
-      var collision = false;
-      for (final path in candidates) {
-        if (await fileSystem.fileExists(path) ||
-            await fileSystem.directoryExists(path)) {
-          collision = true;
-          break;
-        }
-      }
-      if (!collision) {
-        return token;
-      }
+  static Future<void> _bestEffort(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (_) {
+      // Continue so independent rollback steps still have a chance to run.
     }
   }
 
