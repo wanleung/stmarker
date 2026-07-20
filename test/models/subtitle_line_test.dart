@@ -1,7 +1,86 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 
 void main() {
+  const marks = [KaraokeMark(unitText: 'hello', startMs: 100)];
+
+  test('ordinary copyWith preserves marks when timestamps do not change', () {
+    const line = SubtitleLine(
+      index: 0,
+      text: 'hello',
+      startMs: 100,
+      endMs: 200,
+      karaokeMarks: marks,
+    );
+
+    expect(line.copyWith().karaokeMarks, marks);
+    expect(line.copyWith(startMs: 100).karaokeMarks, marks);
+  });
+
+  test('timestamp changes and clearing invalidate karaoke marks', () {
+    const line = SubtitleLine(
+      index: 0,
+      text: 'hello',
+      startMs: 100,
+      endMs: 200,
+      karaokeMarks: marks,
+    );
+
+    expect(line.copyWith(startMs: 101).karaokeMarks, isEmpty);
+    expect(
+      line.withExactTimestamps(startMs: 100, endMs: 201).karaokeMarks,
+      isEmpty,
+    );
+    expect(line.clearTimestamps().karaokeMarks, isEmpty);
+  });
+
+  test('Advanced karaoke updates singing start and marks atomically', () {
+    const line = SubtitleLine(
+      index: 0,
+      text: 'hello',
+      startMs: 100,
+      endMs: 200,
+    );
+
+    final updated = line.withAdvancedKaraoke(startMs: 120, marks: marks);
+
+    expect(updated.startMs, 120);
+    expect(updated.endMs, 200);
+    expect(updated.karaokeMarks, marks);
+  });
+
+  test('equality includes karaoke marks', () {
+    expect(
+      const SubtitleLine(index: 0, text: 'hello', karaokeMarks: marks),
+      isNot(const SubtitleLine(index: 0, text: 'hello')),
+    );
+  });
+
+  test('malformed karaoke marks are ignored', () {
+    final line = SubtitleLine.fromJson({
+      'index': 0,
+      'text': 'hello',
+      'startMs': 100,
+      'endMs': 200,
+      'karaokeMarks': <Object?>[
+        {'unitText': 'hello', 'startMs': 100},
+        {'unitText': 4, 'startMs': 110},
+        {'unitText': 'world'},
+        'bad',
+      ],
+    });
+
+    expect(line.karaokeMarks, marks);
+  });
+
+  test('malformed marks do not weaken required-field validation', () {
+    expect(
+      () => SubtitleLine.fromJson({'text': 'hello', 'karaokeMarks': 'bad'}),
+      throwsA(isA<TypeError>()),
+    );
+  });
+
   test('isFullyMarked is false when either timestamp is missing', () {
     const line = SubtitleLine(index: 0, text: 'hello');
     expect(line.isFullyMarked, isFalse);

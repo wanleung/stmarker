@@ -1,3 +1,4 @@
+import '../karaoke/karaoke_models.dart';
 import 'subtitle_line.dart';
 import '../subtitle_fonts/subtitle_font_catalog.dart';
 
@@ -11,6 +12,8 @@ class Project {
     this.playbackRate = 1.0,
     this.subtitleFontFamily = 'noto_sans_cjk',
     this.subtitleFontSize = defaultSubtitleFontSize,
+    this.karaokeMode = KaraokeMode.standard,
+    this.karaokePreDisplay = KaraokePreDisplay.off,
     required this.lines,
   });
 
@@ -18,6 +21,8 @@ class Project {
   final double playbackRate;
   final String subtitleFontFamily;
   final double subtitleFontSize;
+  final KaraokeMode karaokeMode;
+  final KaraokePreDisplay karaokePreDisplay;
   final List<SubtitleLine> lines;
 
   Project copyWith({
@@ -25,6 +30,8 @@ class Project {
     double? playbackRate,
     String? subtitleFontFamily,
     double? subtitleFontSize,
+    KaraokeMode? karaokeMode,
+    KaraokePreDisplay? karaokePreDisplay,
     List<SubtitleLine>? lines,
   }) {
     return Project(
@@ -32,6 +39,8 @@ class Project {
       playbackRate: playbackRate ?? this.playbackRate,
       subtitleFontFamily: subtitleFontFamily ?? this.subtitleFontFamily,
       subtitleFontSize: subtitleFontSize ?? this.subtitleFontSize,
+      karaokeMode: karaokeMode ?? this.karaokeMode,
+      karaokePreDisplay: karaokePreDisplay ?? this.karaokePreDisplay,
       lines: lines ?? this.lines,
     );
   }
@@ -41,6 +50,8 @@ class Project {
     'playbackRate': playbackRate,
     'subtitleFontFamily': subtitleFontFamily,
     'subtitleFontSize': subtitleFontSize,
+    'karaokeMode': karaokeMode.name,
+    'karaokePreDisplay': karaokePreDisplay.name,
     'lines': lines.map((line) => line.toJson()).toList(),
   };
 
@@ -59,6 +70,8 @@ class Project {
         json['subtitleFontFamily'] as String?,
       ).id,
       subtitleFontSize: fontSize,
+      karaokeMode: karaokeModeFromName(json['karaokeMode']),
+      karaokePreDisplay: karaokePreDisplayFromName(json['karaokePreDisplay']),
       lines: (json['lines'] as List<dynamic>)
           .map((raw) => SubtitleLine.fromJson(raw as Map<String, dynamic>))
           .toList(),

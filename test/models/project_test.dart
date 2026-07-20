@@ -1,9 +1,72 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/subtitle_fonts/subtitle_font_catalog.dart';
 
 void main() {
+  test('legacy project defaults to Standard karaoke with no pre-display', () {
+    final project = Project.fromJson({
+      'mediaPath': '/tmp/song.mp4',
+      'lines': <Object?>[
+        {'index': 0, 'text': 'hello', 'startMs': 1000, 'endMs': 2000},
+      ],
+    });
+    expect(project.karaokeMode, KaraokeMode.standard);
+    expect(project.karaokePreDisplay, KaraokePreDisplay.off);
+    expect(project.lines.single.karaokeMarks, isEmpty);
+  });
+
+  test('karaoke configuration and marks survive JSON round trip', () {
+    final project = Project(
+      mediaPath: '/tmp/song.mp4',
+      karaokeMode: KaraokeMode.karaokeAdvanced,
+      karaokePreDisplay: KaraokePreDisplay.oneLineAhead,
+      lines: const [
+        SubtitleLine(
+          index: 0,
+          text: 'hello world',
+          startMs: 1000,
+          endMs: 3000,
+          karaokeMarks: [
+            KaraokeMark(unitText: 'hello', startMs: 1000),
+            KaraokeMark(unitText: 'world', startMs: 2100),
+          ],
+        ),
+      ],
+    );
+    expect(Project.fromJson(project.toJson()).toJson(), project.toJson());
+  });
+
+  test('unknown karaoke enum names fall back to Standard and Off', () {
+    final project = Project.fromJson({
+      'mediaPath': '/tmp/song.mp4',
+      'lines': <Object?>[],
+      'karaokeMode': 'futureMode',
+      'karaokePreDisplay': 'futureDisplay',
+    });
+
+    expect(project.karaokeMode, KaraokeMode.standard);
+    expect(project.karaokePreDisplay, KaraokePreDisplay.off);
+  });
+
+  test('copyWith preserves and overrides karaoke configuration', () {
+    const project = Project(
+      mediaPath: '/tmp/song.mp4',
+      karaokeMode: KaraokeMode.karaokeAdvanced,
+      karaokePreDisplay: KaraokePreDisplay.seconds3,
+      lines: [],
+    );
+
+    expect(project.copyWith().karaokeMode, KaraokeMode.karaokeAdvanced);
+    expect(
+      project
+          .copyWith(karaokePreDisplay: KaraokePreDisplay.seconds5)
+          .karaokePreDisplay,
+      KaraokePreDisplay.seconds5,
+    );
+  });
+
   test('playbackRate defaults to 1.0', () {
     const project = Project(mediaPath: '/tmp/song.mp3', lines: []);
     expect(project.playbackRate, 1.0);
