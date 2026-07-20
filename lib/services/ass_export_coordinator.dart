@@ -1,5 +1,3 @@
-import '../karaoke/karaoke_models.dart';
-import '../karaoke/karaoke_timing.dart';
 import '../models/project.dart';
 import '../models/subtitle_line.dart';
 import '../subtitle_fonts/subtitle_font_catalog.dart';
@@ -22,28 +20,7 @@ typedef AssPackageExporter =
       required AssetBytesLoader loadAsset,
     });
 
-final class AssExportResult {
-  const AssExportResult._(this._status, this.invalidLineNumbers);
-
-  static const cancelled = AssExportResult._(_AssExportStatus.cancelled, []);
-  static const exported = AssExportResult._(_AssExportStatus.exported, []);
-
-  factory AssExportResult.invalidAdvanced(List<int> lineNumbers) =>
-      AssExportResult._(
-        _AssExportStatus.invalidAdvanced,
-        List.unmodifiable(lineNumbers),
-      );
-
-  final _AssExportStatus _status;
-  final List<int> invalidLineNumbers;
-
-  bool get isCancelled => _status == _AssExportStatus.cancelled;
-  bool get isExported => _status == _AssExportStatus.exported;
-  bool get hasInvalidAdvancedTiming =>
-      _status == _AssExportStatus.invalidAdvanced;
-}
-
-enum _AssExportStatus { cancelled, exported, invalidAdvanced }
+enum AssExportResult { cancelled, exported }
 
 final class AssExportCoordinator {
   AssExportCoordinator({
@@ -70,14 +47,10 @@ final class AssExportCoordinator {
     required void Function(String message) showSuccess,
   }) async {
     if (!isActive()) return AssExportResult.cancelled;
-    if (project?.karaokeMode == KaraokeMode.karaokeAdvanced) {
-      final invalidLineNumbers = [
-        for (final line in project!.lines)
-          if (karaokeTimingIssue(line, project.karaokeMode) != null)
-            line.index + 1,
-      ];
+    if (project != null) {
+      final invalidLineNumbers = AssCodec.invalidKaraokeLineNumbers(project);
       if (invalidLineNumbers.isNotEmpty) {
-        return AssExportResult.invalidAdvanced(invalidLineNumbers);
+        throw AssKaraokeValidationException(invalidLineNumbers);
       }
     }
     final warnings = exportWarnings(project?.lines ?? lines);

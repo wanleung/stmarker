@@ -3,6 +3,17 @@ import '../karaoke/karaoke_timing.dart';
 import '../models/project.dart';
 import '../models/subtitle_line.dart';
 
+final class AssKaraokeValidationException implements Exception {
+  AssKaraokeValidationException(List<int> lineNumbers)
+    : lineNumbers = List.unmodifiable(lineNumbers);
+
+  final List<int> lineNumbers;
+
+  @override
+  String toString() =>
+      'Invalid karaoke timing on line(s): ${lineNumbers.join(', ')}';
+}
+
 class AssCodec {
   const AssCodec._();
 
@@ -55,6 +66,10 @@ class AssCodec {
   }) {
     if (project.karaokeMode == KaraokeMode.standard) {
       return encode(project.lines, fontFamily: fontFamily, fontSize: fontSize);
+    }
+    final invalidLineNumbers = invalidKaraokeLineNumbers(project);
+    if (invalidLineNumbers.isNotEmpty) {
+      throw AssKaraokeValidationException(invalidLineNumbers);
     }
 
     final buffer = StringBuffer()
@@ -135,6 +150,27 @@ class AssCodec {
     return buffer.toString();
   }
 
+  static List<int> invalidKaraokeLineNumbers(Project project) {
+    if (project.karaokeMode == KaraokeMode.standard) return const [];
+
+    return List.unmodifiable([
+      for (final line in project.lines)
+        if (line.isFullyMarked &&
+            !_canEncodeKaraokeLine(line, project.karaokeMode))
+          line.index + 1,
+    ]);
+  }
+
+  static bool _canEncodeKaraokeLine(SubtitleLine line, KaraokeMode mode) {
+    if (karaokeTimingIssue(line, mode) != null) return false;
+    final segments = resolveKaraokeSegments(line, mode);
+    if (segments.isEmpty) return false;
+    final totalDuration = _roundedCentiseconds(
+      segments.last.endMs - segments.first.startMs,
+    );
+    return totalDuration >= segments.length;
+  }
+
   static String _karaokeStyle(
     String name,
     String fontFamily,
@@ -164,26 +200,37 @@ class AssCodec {
     final buffer = StringBuffer();
     final singingStartMs = segments.first.startMs;
     if (eventStartMs < singingStartMs) {
-      buffer.write(
-        '{\\kf${_roundedCentiseconds(singingStartMs - eventStartMs)}}',
-      );
+      final delay = _roundedCentiseconds(singingStartMs - eventStartMs);
+      if (delay > 0) buffer.write('{\\kf$delay}');
     }
 
-    final totalDuration = _roundedCentiseconds(
-      segments.last.endMs - singingStartMs,
-    );
-    var assignedDuration = 0;
+    final durations = _karaokeDurations(segments);
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
-      final duration = index == segments.length - 1
-          ? totalDuration - assignedDuration
-          : (segment.endMs - segment.startMs) ~/ 10;
-      assignedDuration += duration;
       buffer
-        ..write('{\\kf$duration}')
+        ..write('{\\kf${durations[index]}}')
         ..write(_escapeText(segment.text));
     }
     return buffer.toString();
+  }
+
+  static List<int> _karaokeDurations(List<KaraokeSegment> segments) {
+    final totalDuration = _roundedCentiseconds(
+      segments.last.endMs - segments.first.startMs,
+    );
+    final durations = List<int>.filled(segments.length, 1);
+    var remaining = totalDuration - segments.length;
+
+    // Preserve each non-final unit's floored duration when the total permits;
+    // the final unit receives the stable exact remainder.
+    for (var index = 0; index < segments.length - 1; index++) {
+      final floored = (segments[index].endMs - segments[index].startMs) ~/ 10;
+      final extra = (floored - 1).clamp(0, remaining);
+      durations[index] += extra;
+      remaining -= extra;
+    }
+    durations[durations.length - 1] += remaining;
+    return durations;
   }
 
   static int _roundedCentiseconds(int milliseconds) => (milliseconds + 5) ~/ 10;

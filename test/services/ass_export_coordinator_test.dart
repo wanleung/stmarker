@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stmarker/karaoke/karaoke_models.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
+import 'package:stmarker/services/ass_codec.dart';
 import 'package:stmarker/services/ass_export_coordinator.dart';
 import 'package:stmarker/services/asset_bytes_loader.dart';
 import 'package:stmarker/subtitle_fonts/subtitle_font_catalog.dart';
@@ -18,6 +19,18 @@ void main() {
   const complete = [
     SubtitleLine(index: 0, text: 'Hello', startMs: 0, endMs: 1000),
   ];
+
+  test('AssExportResult retains its original public enum shape', () {
+    expect(AssExportResult.values, [
+      AssExportResult.cancelled,
+      AssExportResult.exported,
+    ]);
+    expect(AssExportResult.cancelled.name, 'cancelled');
+    expect(AssExportResult.cancelled.index, 0);
+    expect(AssExportResult.exported.name, 'exported');
+    expect(AssExportResult.exported.index, 1);
+    expect(_describeResult(AssExportResult.exported), 'exported');
+  });
 
   test(
     'picker receives export.ass default and cancellation stops before warnings',
@@ -247,7 +260,7 @@ void main() {
   test(
     'invalid Advanced timing returns exact lines and writes nothing',
     () async {
-      for (final invalidLine in [
+      final invalidLines = [
         const SubtitleLine(
           index: 4,
           text: 'missing marks',
@@ -271,18 +284,20 @@ void main() {
             KaraokeMark(unitText: 'marks', startMs: 0),
           ],
         ),
-      ]) {
-        final events = <String>[];
-        final result = await _coordinator(events).export(
+      ];
+      final events = <String>[];
+
+      await expectLater(
+        _coordinator(events).export(
           choosePath: ({required defaultFileName}) async {
             events.add('pick');
             return '/tmp/export.ass';
           },
-          lines: [invalidLine],
+          lines: invalidLines,
           project: Project(
             mediaPath: '/tmp/media.mp4',
             karaokeMode: KaraokeMode.karaokeAdvanced,
-            lines: [invalidLine],
+            lines: invalidLines,
           ),
           face: face,
           fontSize: 31,
@@ -291,15 +306,71 @@ void main() {
           confirmWarnings: (_, _) async => true,
           confirmCompanionReplacement: (_) async => true,
           showSuccess: (_) => events.add('success'),
-        );
+        ),
+        throwsA(
+          isA<AssKaraokeValidationException>().having(
+            (error) => error.lineNumbers,
+            'lineNumbers',
+            [5, 7, 9],
+          ),
+        ),
+      );
+      expect(events, isEmpty);
+    },
+  );
 
-        expect(result.hasInvalidAdvancedTiming, isTrue);
-        expect(result.invalidLineNumbers, [invalidLine.index + 1]);
-        expect(events, isEmpty);
-      }
+  test(
+    'invalid Easy timing and allocation return exact lines before side effects',
+    () async {
+      final events = <String>[];
+      const lines = [
+        SubtitleLine(index: 1, text: 'a b c', startMs: 0, endMs: 2),
+        SubtitleLine(index: 2, text: 'a b c d', startMs: 0, endMs: 24),
+      ];
+
+      await expectLater(
+        _coordinator(events).export(
+          choosePath: ({required defaultFileName}) async {
+            events.add('pick');
+            return '/tmp/export.ass';
+          },
+          lines: lines,
+          project: const Project(
+            mediaPath: '/tmp/media.mp4',
+            karaokeMode: KaraokeMode.karaokeEasy,
+            lines: lines,
+          ),
+          face: face,
+          fontSize: 31,
+          loadAsset: _loader,
+          isActive: () => true,
+          confirmWarnings: (_, _) async {
+            events.add('warnings');
+            return true;
+          },
+          confirmCompanionReplacement: (_) async {
+            events.add('companion');
+            return true;
+          },
+          showSuccess: (_) => events.add('success'),
+        ),
+        throwsA(
+          isA<AssKaraokeValidationException>().having(
+            (error) => error.lineNumbers,
+            'lineNumbers',
+            [2, 3],
+          ),
+        ),
+      );
+      expect(events, isEmpty);
     },
   );
 }
+
+String _describeResult(AssExportResult result) => switch (result) {
+  AssExportResult.cancelled => 'cancelled',
+  AssExportResult.exported => 'exported',
+};
 
 Future<Uint8List> _loader(String _) async => Uint8List.fromList([1, 2, 3]);
 

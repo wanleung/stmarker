@@ -5,6 +5,15 @@ import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/services/ass_codec.dart';
 
 void main() {
+  test('karaoke validation exceptions snapshot immutable line numbers', () {
+    final source = [2, 4];
+    final error = AssKaraokeValidationException(source);
+    source.add(6);
+
+    expect(error.lineNumbers, [2, 4]);
+    expect(() => error.lineNumbers.add(8), throwsUnsupportedError);
+  });
+
   test('encode writes the exact ASS headers and selected style', () {
     expect(
       AssCodec.encode(const [], fontFamily: 'Noto Sans CJK SC', fontSize: 36.0),
@@ -188,7 +197,7 @@ void main() {
     expect(event, endsWith(r',,{\kf1}a{\kf2} b'));
   });
 
-  test('short units keep every kf duration non-negative and sum exactly', () {
+  test('rejects lines whose rounded duration cannot give every unit 1cs', () {
     final project = _project(
       mode: KaraokeMode.karaokeAdvanced,
       lines: [
@@ -207,6 +216,36 @@ void main() {
       ],
     );
 
+    expect(
+      () => AssCodec.encodeProject(project, fontFamily: 'Family', fontSize: 24),
+      throwsA(
+        isA<AssKaraokeValidationException>().having(
+          (error) => error.lineNumbers,
+          'lineNumbers',
+          [1],
+        ),
+      ),
+    );
+  });
+
+  test('sub-10ms units receive positive durations with an exact total', () {
+    final project = _project(
+      mode: KaraokeMode.karaokeAdvanced,
+      lines: [
+        SubtitleLine.withKaraokeMarks(
+          index: 0,
+          text: 'a b c',
+          startMs: 0,
+          endMs: 30,
+          karaokeMarks: const [
+            KaraokeMark(unitText: 'a', startMs: 0),
+            KaraokeMark(unitText: 'b', startMs: 6),
+            KaraokeMark(unitText: 'c', startMs: 12),
+          ],
+        ),
+      ],
+    );
+
     final event = AssCodec.encodeProject(
       project,
       fontFamily: 'Family',
@@ -216,8 +255,10 @@ void main() {
       r'\\kf(\d+)',
     ).allMatches(event).map((match) => int.parse(match.group(1)!)).toList();
 
-    expect(durations, [0, 0, 0, 2]);
-    expect(durations.reduce((left, right) => left + right), 2);
+    expect(durations, [1, 1, 1]);
+    expect(durations.every((duration) => duration > 0), isTrue);
+    expect(durations.reduce((left, right) => left + right), 3);
+    expect(event, isNot(contains(r'\kf0')));
   });
 
   test('kf durations sum to the rounded active millisecond duration', () {
