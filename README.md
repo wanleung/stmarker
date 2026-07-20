@@ -1,6 +1,6 @@
-# stmarker
+# Subtitle Marker
 
-`stmarker` is a local desktop application for timing subtitles or lyrics
+Subtitle Marker is a local desktop application for timing subtitles or lyrics
 against video and audio. Import or paste one line at a time, play the media,
 then hold Space for the duration of each line. The finished timings can be
 saved as a reusable project, exported as SRT, or added directly to a video
@@ -145,7 +145,7 @@ the next time the project is saved.
 
 ## License
 
-Copyright © 2026 stmarker contributors.
+Copyright © 2026 Subtitle Marker contributors.
 
 This project is licensed under the GNU General Public License, version 3 or
 later. See [LICENSE](LICENSE) for the full text.

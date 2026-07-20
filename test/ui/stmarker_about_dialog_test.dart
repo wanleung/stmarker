@@ -20,7 +20,7 @@ void main() {
     await tester.tap(find.text('About'));
     await tester.pumpAndSettle();
 
-    expect(find.text('stmarker'), findsOneWidget);
+    expect(find.text('Subtitle Marker'), findsOneWidget);
     expect(find.text(stmarkerVersion), findsOneWidget);
     expect(find.textContaining('GPL-3.0-or-later'), findsOneWidget);
     expect(find.textContaining('creating subtitled videos'), findsOneWidget);

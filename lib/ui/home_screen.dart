@@ -362,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final session = context.watch<MarkingSession>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('stmarker'),
+        title: const Text('Subtitle Marker'),
         actions: [
           IconButton(
             tooltip: 'Paste lines',
@@ -417,7 +417,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _runAction('Export video', () => _exportVideo(session)),
           ),
           IconButton(
-            tooltip: 'About stmarker',
+            tooltip: 'About Subtitle Marker',
             icon: const Icon(Icons.info_outline),
             onPressed: () => showStmarkerAboutDialog(context),
           ),
