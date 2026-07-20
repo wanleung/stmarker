@@ -110,9 +110,21 @@ KaraokeTimingIssue? karaokeTimingIssue(SubtitleLine line, KaraokeMode mode) {
     return KaraokeTimingIssue.invalidLineRange;
   }
 
-  if (mode == KaraokeMode.karaokeEasy) return null;
-
   final tokens = tokenizeKaraokeText(line.text);
+  if (mode == KaraokeMode.karaokeEasy) {
+    final durationMs = endMs - startMs;
+    for (var index = 0; index < tokens.length; index++) {
+      final unitStartMs = startMs + (durationMs * index ~/ tokens.length);
+      final unitEndMs = index == tokens.length - 1
+          ? endMs
+          : startMs + (durationMs * (index + 1) ~/ tokens.length);
+      if (unitEndMs <= unitStartMs) {
+        return KaraokeTimingIssue.nonPositiveUnitDuration;
+      }
+    }
+    return null;
+  }
+
   final marks = line.karaokeMarks;
   if (marks.isEmpty || marks.length != tokens.length) {
     return KaraokeTimingIssue.missingMarks;
@@ -196,45 +208,13 @@ final class _TokenDraft {
 bool _isWhitespace(String grapheme) =>
     RegExp(r'^\s+$', unicode: true).hasMatch(grapheme);
 
-bool _isOpeningPunctuation(String grapheme) => const {
-  '(',
-  '[',
-  '{',
-  '<',
-  '«',
-  '‹',
-  '“',
-  '‘',
-  '「',
-  '『',
-  '（',
-  '［',
-  '｛',
-  '【',
-  '《',
-  '〈',
-  '〔',
-  '〖',
-  '〘',
-  '〚',
-}.contains(grapheme);
+final _openingPunctuation = RegExp(r'^[\p{Ps}\p{Pi}]\p{M}*$', unicode: true);
+final _punctuation = RegExp(r'^\p{P}\p{M}*$', unicode: true);
 
-bool _isPunctuation(String grapheme) {
-  final rune = grapheme.runes.singleOrNull;
-  if (rune == null) return false;
-  return (rune >= 0x21 && rune <= 0x2f) ||
-      (rune >= 0x3a && rune <= 0x40) ||
-      (rune >= 0x5b && rune <= 0x60) ||
-      (rune >= 0x7b && rune <= 0x7e) ||
-      (rune >= 0x2000 && rune <= 0x206f) ||
-      (rune >= 0x3000 && rune <= 0x303f) ||
-      (rune >= 0xfe10 && rune <= 0xfe1f) ||
-      (rune >= 0xfe30 && rune <= 0xfe6f) ||
-      (rune >= 0xff01 && rune <= 0xff0f) ||
-      (rune >= 0xff1a && rune <= 0xff20) ||
-      (rune >= 0xff3b && rune <= 0xff40) ||
-      (rune >= 0xff5b && rune <= 0xff65);
-}
+bool _isOpeningPunctuation(String grapheme) =>
+    _openingPunctuation.hasMatch(grapheme);
+
+bool _isPunctuation(String grapheme) => _punctuation.hasMatch(grapheme);
 
 bool _isCjk(String grapheme) {
   final rune = grapheme.runes.first;

@@ -45,6 +45,45 @@ void main() {
         '好',
       ]);
     });
+
+    test('preserves leading, trailing, and whitespace-only text', () {
+      expect(tokenizeKaraokeText('  hello').map((token) => token.text), [
+        '  hello',
+      ]);
+      expect(tokenizeKaraokeText('hello  ').map((token) => token.text), [
+        'hello  ',
+      ]);
+      final whitespace = tokenizeKaraokeText(' \t\n');
+      expect(whitespace.map((token) => token.text), [' \t\n']);
+      expect(whitespace.single.identity, isEmpty);
+    });
+
+    test('attaches leading and trailing punctuation without timing it', () {
+      final tokens = tokenizeKaraokeText('¿hello!');
+
+      expect(tokens.map((token) => token.text), ['¿hello!']);
+      expect(tokens.map((token) => token.identity), ['hello']);
+    });
+
+    test('recognizes Unicode punctuation across mixed scripts', () {
+      final arabic = tokenizeKaraokeText('你،好');
+      final armenian = tokenizeKaraokeText('բարեւ։ աշխարհ');
+      final devanagari = tokenizeKaraokeText('नमस्ते। दुनिया');
+
+      expect(arabic.map((token) => token.text), ['你،', '好']);
+      expect(arabic.map((token) => token.identity), ['你', '好']);
+      expect(armenian.map((token) => token.text).join(), 'բարեւ։ աշխարհ');
+      expect(armenian.map((token) => token.identity), ['բարեւ', 'աշխարհ']);
+      expect(devanagari.map((token) => token.text).join(), 'नमस्ते। दुनिया');
+      expect(devanagari.map((token) => token.identity), ['नमस्ते', 'दुनिया']);
+    });
+
+    test('recognizes punctuation graphemes with variation selectors', () {
+      final tokens = tokenizeKaraokeText('‼️hello');
+
+      expect(tokens.map((token) => token.text), ['‼️hello']);
+      expect(tokens.map((token) => token.identity), ['hello']);
+    });
   });
 
   group('resolveKaraokeSegments', () {
@@ -64,6 +103,38 @@ void main() {
         (1666, 2000),
       ]);
       expect(segments.map((segment) => segment.text).join(), line.text);
+    });
+
+    test('Easy rejects durations that derive a zero-duration unit', () {
+      const line = SubtitleLine(
+        index: 0,
+        text: 'one two three',
+        startMs: 1000,
+        endMs: 1002,
+      );
+
+      expect(
+        karaokeTimingIssue(line, KaraokeMode.karaokeEasy),
+        KaraokeTimingIssue.nonPositiveUnitDuration,
+      );
+      expect(resolveKaraokeSegments(line, KaraokeMode.karaokeEasy), isEmpty);
+    });
+
+    test('Easy preserves the formula for the shortest valid duration', () {
+      const line = SubtitleLine(
+        index: 0,
+        text: 'one two three',
+        startMs: 1000,
+        endMs: 1003,
+      );
+
+      expect(
+        resolveKaraokeSegments(
+          line,
+          KaraokeMode.karaokeEasy,
+        ).map((segment) => (segment.startMs, segment.endMs)),
+        [(1000, 1001), (1001, 1002), (1002, 1003)],
+      );
     });
 
     test('Advanced resolves a valid exact mark sequence', () {
