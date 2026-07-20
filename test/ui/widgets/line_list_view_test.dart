@@ -43,4 +43,47 @@ void main() {
 
     expect(tapped, 1);
   });
+
+  testWidgets('auto-scroll does not trigger on unrelated session mutations', (tester) async {
+    // Create 25 lines with the first 5 fully marked so currentIndex starts at 5.
+    // Each row is 48px tall, so currentIndex=5 means offset=240px.
+    final lines = <SubtitleLine>[
+      for (int i = 0; i < 5; i++)
+        SubtitleLine(index: i, text: 'marked line $i', startMs: i * 1000, endMs: i * 1000 + 500),
+      for (int i = 5; i < 25; i++)
+        SubtitleLine(index: i, text: 'unmarked line $i'),
+    ];
+    final session = MarkingSession(Project(mediaPath: '/x.mp3', lines: lines));
+
+    await tester.pumpWidget(_wrap(session, (_) {}));
+
+    // Pump to let the initial auto-scroll animation complete (~200ms).
+    await tester.pumpAndSettle();
+
+    // Get the scroll offset after initial scroll to currentIndex=5.
+    final scrollOffsetAfterInit = tester.widget<ListView>(find.byType(ListView)).controller!.offset;
+    expect(scrollOffsetAfterInit, greaterThan(0), reason: 'Should have scrolled to index 5');
+
+    // Call an unrelated mutation (setPlaybackRate) that does NOT change currentIndex.
+    session.setPlaybackRate(0.75);
+    await tester.pumpAndSettle();
+
+    // Verify the scroll offset is unchanged (the regression: offset should not change).
+    final scrollOffsetAfterMutation = tester.widget<ListView>(find.byType(ListView)).controller!.offset;
+    expect(scrollOffsetAfterMutation, scrollOffsetAfterInit,
+      reason: 'Offset should not change on unrelated mutations');
+
+    // Sanity check: drive a real currentIndex change by marking the current line.
+    // currentIndex is now 5, mark its start and end to advance to index 6.
+    session.markStart(5000);
+    session.markEnd(5500);
+    await tester.pumpAndSettle();
+
+    // Verify currentIndex has advanced and offset has changed.
+    expect(session.currentIndex, isNotNull, reason: 'Should still have an unmarked line');
+    expect(session.currentIndex, greaterThan(5), reason: 'Should have advanced past the marked line');
+    final scrollOffsetAfterMarking = tester.widget<ListView>(find.byType(ListView)).controller!.offset;
+    expect(scrollOffsetAfterMarking, greaterThan(scrollOffsetAfterInit),
+      reason: 'Offset should increase when currentIndex advances');
+  });
 }
