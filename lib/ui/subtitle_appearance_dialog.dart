@@ -39,10 +39,9 @@ class _SubtitleAppearanceDialogState extends State<_SubtitleAppearanceDialog> {
   late String _fontFamily = SubtitleFontCatalog.byId(
     widget.initial.fontFamily,
   ).id;
-  late double _fontSize = widget.initial.fontSize.clamp(
-    minimumSubtitleFontSize,
-    maximumSubtitleFontSize,
-  );
+  late double _fontSize = widget.initial.fontSize
+      .clamp(minimumSubtitleFontSize, maximumSubtitleFontSize)
+      .roundToDouble();
 
   void _reset() {
     setState(() {
@@ -86,7 +85,8 @@ class _SubtitleAppearanceDialogState extends State<_SubtitleAppearanceDialog> {
                         (maximumSubtitleFontSize - minimumSubtitleFontSize)
                             .toInt(),
                     value: _fontSize,
-                    onChanged: (value) => setState(() => _fontSize = value),
+                    onChanged: (value) =>
+                        setState(() => _fontSize = value.roundToDouble()),
                   ),
                 ),
                 SizedBox(

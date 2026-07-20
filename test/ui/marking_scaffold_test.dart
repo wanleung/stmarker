@@ -13,6 +13,70 @@ import 'package:stmarker/ui/marking_scaffold.dart';
 import '../support/fake_playback_controls.dart';
 
 void main() {
+  testWidgets('cancelling review appearance leaves the session unchanged', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        subtitleFontFamily: 'noto_serif_cjk',
+        subtitleFontSize: 36,
+        lines: [SubtitleLine(index: 0, text: 'preview')],
+      ),
+    );
+    var notifications = 0;
+    session.addListener(() => notifications++);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-appearance')));
+    await tester.pumpAndSettle();
+    tester
+        .widget<Slider>(find.byKey(const ValueKey('subtitle-appearance-size')))
+        .onChanged!(48);
+    await tester.pump();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(session.project.subtitleFontFamily, 'noto_serif_cjk');
+    expect(session.project.subtitleFontSize, 36);
+    expect(notifications, 0);
+  });
+
+  testWidgets('empty review uses the multilingual fallback preview', (
+    tester,
+  ) async {
+    final session = MarkingSession(
+      const Project(mediaPath: '/x.mp3', lines: []),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(
+              controls: FakePlaybackControls(),
+              reviewMode: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-appearance')));
+    await tester.pumpAndSettle();
+    expect(find.text('Subtitle preview 字幕 미리보기'), findsOneWidget);
+  });
+
   testWidgets(
     'review appearance saves once and styles text without changing a blank gap',
     (tester) async {

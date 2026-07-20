@@ -4,6 +4,58 @@ import 'package:stmarker/subtitle_fonts/subtitle_font_catalog.dart';
 import 'package:stmarker/ui/subtitle_appearance_dialog.dart';
 
 void main() {
+  testWidgets('initial font and size are shown in the preview', (tester) async {
+    await tester.pumpWidget(const _DialogHarness());
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Serif'), findsOneWidget);
+    expect(find.text('36'), findsOneWidget);
+    final preview = tester.widget<Text>(
+      find.byKey(const ValueKey('subtitle-appearance-preview')),
+    );
+    expect(preview.style?.fontFamily, 'Noto Serif CJK SC');
+    expect(preview.style?.fontSize, 36);
+  });
+
+  testWidgets('fractional initial size is rounded everywhere and on save', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _DialogHarness(
+        initial: SubtitleAppearance(
+          fontFamily: 'noto_serif_cjk',
+          fontSize: 20.6,
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('21'), findsOneWidget);
+    expect(
+      tester
+          .widget<Slider>(
+            find.byKey(const ValueKey('subtitle-appearance-size')),
+          )
+          .value,
+      21,
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('subtitle-appearance-preview')),
+          )
+          .style
+          ?.fontSize,
+      21,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('subtitle-appearance-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Result: noto_serif_cjk/21.0'), findsOneWidget);
+  });
+
   testWidgets('dialog exposes catalog faces and updates its live preview', (
     tester,
   ) async {
@@ -55,11 +107,21 @@ void main() {
     final slider = tester.widget<Slider>(
       find.byKey(const ValueKey('subtitle-appearance-size')),
     );
+    await tester.tap(find.byKey(const ValueKey('subtitle-appearance-font')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Monospace').last);
+    await tester.pumpAndSettle();
     slider.onChanged!(48);
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('subtitle-appearance-reset')));
     await tester.pump();
+    expect(find.text('Sans'), findsOneWidget);
     expect(find.text('24'), findsOneWidget);
+    final resetPreview = tester.widget<Text>(
+      find.byKey(const ValueKey('subtitle-appearance-preview')),
+    );
+    expect(resetPreview.style?.fontFamily, 'Noto Sans CJK SC');
+    expect(resetPreview.style?.fontSize, 24);
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
@@ -78,12 +140,19 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('subtitle-appearance-save')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Result: noto_sans_mono_cjk/32'), findsOneWidget);
+    expect(find.text('Result: noto_sans_mono_cjk/32.0'), findsOneWidget);
   });
 }
 
 class _DialogHarness extends StatefulWidget {
-  const _DialogHarness();
+  const _DialogHarness({
+    this.initial = const SubtitleAppearance(
+      fontFamily: 'noto_serif_cjk',
+      fontSize: 36,
+    ),
+  });
+
+  final SubtitleAppearance initial;
 
   @override
   State<_DialogHarness> createState() => _DialogHarnessState();
@@ -103,17 +172,14 @@ class _DialogHarnessState extends State<_DialogHarness> {
                 onPressed: () async {
                   final result = await showSubtitleAppearanceDialog(
                     context,
-                    initial: const SubtitleAppearance(
-                      fontFamily: 'noto_serif_cjk',
-                      fontSize: 36,
-                    ),
+                    initial: widget.initial,
                     previewText: 'Preview 字幕',
                   );
                   if (mounted) {
                     setState(() {
                       _result = result == null
                           ? 'null'
-                          : '${result.fontFamily}/${result.fontSize.toInt()}';
+                          : '${result.fontFamily}/${result.fontSize}';
                     });
                   }
                 },
