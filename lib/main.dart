@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:provider/provider.dart';
+
+import 'models/project.dart';
+import 'state/marking_session.dart';
+import 'ui/home_screen.dart';
 
 void main() {
   MediaKit.ensureInitialized();
@@ -11,11 +16,12 @@ class StmarkerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'stmarker',
-      home: Scaffold(
-        appBar: AppBar(title: const Text('stmarker')),
-        body: const Center(child: Text('stmarker')),
+    return ChangeNotifierProvider(
+      create: (_) => MarkingSession(const Project(mediaPath: '', lines: [])),
+      child: MaterialApp(
+        title: 'stmarker',
+        theme: ThemeData(colorSchemeSeed: Colors.indigo),
+        home: const HomeScreen(),
       ),
     );
   }
