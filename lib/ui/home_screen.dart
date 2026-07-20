@@ -13,6 +13,7 @@ import '../services/project_store.dart';
 import '../services/srt_codec.dart';
 import '../state/marking_session.dart';
 import 'marking_scaffold.dart';
+import 'stmarker_about_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -414,6 +415,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.movie_creation_outlined),
             onPressed: () =>
                 _runAction('Export video', () => _exportVideo(session)),
+          ),
+          IconButton(
+            tooltip: 'About stmarker',
+            icon: const Icon(Icons.info_outline),
+            onPressed: () => showStmarkerAboutDialog(context),
           ),
         ],
       ),
