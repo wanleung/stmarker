@@ -67,7 +67,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadMedia(MarkingSession session) async {
-    final result = await FilePicker.pickFiles(type: FileType.media);
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: [
+        'mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'wmv', 'm4v', 'mpeg', 'mpg',
+        'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus', 'wma',
+      ],
+    );
     final path = result?.files.single.path;
     if (path == null) return;
     session.setMediaPath(path);
