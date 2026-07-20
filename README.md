@@ -13,7 +13,8 @@ not upload media or subtitle text.
 
 - Paste plain text or import existing SRT and LRC files.
 - Mark line start and end times using the keyboard.
-- Review and edit timestamps directly.
+- Review each completed subtitle interval and flag lines to redo.
+- Edit timestamps directly when not in review mode.
 - Save and reopen `.stmproj` project files.
 - Relocate media when a saved project references a moved file.
 - Export standard SRT subtitles, including partially completed projects.
@@ -119,8 +120,13 @@ x86_64; other architectures need a matching `linuxdeploy` build.
    - Hold Space when the line begins.
    - Release Space when the line ends.
    - Press Backspace to clear and retry the latest line.
-4. Select any row to seek to it and edit its millisecond timestamps.
-5. Save the work as an `.stmproj` project, export SRT, or export a subtitled
+4. When every line is marked, select **Review marked lines** in the toolbar.
+   Play each line's exact interval, move through the list, and select
+   **Needs redo** for any line that needs another pass. Choose **Redo flagged**
+   to clear those timings and resume marking from the first flagged line.
+5. Outside review mode, select any row to seek to it and edit its millisecond
+   timestamps directly.
+6. Save the work as an `.stmproj` project, export SRT, or export a subtitled
    video.
 
 Invalid ranges and overlaps are shown in the line list. Export remains
