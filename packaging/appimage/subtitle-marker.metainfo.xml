@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>subtitle-marker.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Subtitle Marker</name>
+  <summary>Time subtitles and lyrics to your media</summary>
+  <description>
+    <p>
+      Subtitle Marker is a local desktop application for timing subtitles or
+      lyrics against video and audio, exporting SRT files, and creating
+      subtitled videos with FFmpeg.
+    </p>
+  </description>
+  <launchable type="desktop-id">subtitle-marker.desktop</launchable>
+  <url type="homepage">https://github.com/wanleung/stmarker</url>
+  <content_rating type="oars-1.1" />
+</component>

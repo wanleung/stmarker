@@ -69,6 +69,48 @@ To create a release build:
 flutter build linux
 ```
 
+## Build an AppImage
+
+On an x86_64 Linux build machine, install the normal Linux requirements from
+above and run:
+
+```bash
+./packaging/appimage/build-appimage.sh
+```
+
+The script builds the Flutter release, downloads `linuxdeploy` when necessary,
+packages the Flutter bundle and FFmpeg, then writes:
+
+```text
+build/appimage/Subtitle_Marker-x86_64.AppImage
+```
+
+Run the result directly:
+
+```bash
+chmod +x build/appimage/Subtitle_Marker-x86_64.AppImage
+./build/appimage/Subtitle_Marker-x86_64.AppImage
+```
+
+FFmpeg is included by default so video export works on machines without a
+system FFmpeg installation. To create a smaller AppImage that relies on the
+host's FFmpeg instead:
+
+```bash
+BUNDLE_FFMPEG=0 ./packaging/appimage/build-appimage.sh
+```
+
+The AppImage still expects the host to provide a compatible GTK 3 and libmpv
+runtime. On Ubuntu or Debian these can be installed with:
+
+```bash
+sudo apt install libgtk-3-0 libmpv2
+```
+
+Build on the oldest Linux distribution you intend to support because glibc is
+backward-compatible, not forward-compatible. The current script targets
+x86_64; other architectures need a matching `linuxdeploy` build.
+
 ## Workflow
 
 1. Select **Paste lines** or **Import SRT/LRC**.

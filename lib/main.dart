@@ -19,6 +19,7 @@ class StmarkerApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => MarkingSession(const Project(mediaPath: '', lines: [])),
       child: MaterialApp(
+        debugShowCheckedModeBanner: false,
         title: 'Subtitle Marker',
         theme: ThemeData(colorSchemeSeed: Colors.indigo),
         home: const HomeScreen(),
