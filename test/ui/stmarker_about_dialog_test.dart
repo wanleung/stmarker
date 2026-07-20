@@ -83,4 +83,19 @@ void main() {
     expect(find.text('Could not open the GitHub repository.'), findsOneWidget);
     expect(find.text('Subtitle Marker'), findsOneWidget);
   });
+
+  testWidgets('reports when opening the GitHub repository throws', (
+    tester,
+  ) async {
+    await pumpAbout(
+      tester,
+      launcher: (uri, {mode = LaunchMode.platformDefault}) async {
+        throw Exception('launch failed');
+      },
+    );
+    await tester.tap(find.text('github.com/wanleung/stmarker'));
+    await tester.pumpAndSettle();
+    expect(find.text('Could not open the GitHub repository.'), findsOneWidget);
+    expect(find.text('Subtitle Marker'), findsOneWidget);
+  });
 }
