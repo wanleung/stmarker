@@ -110,7 +110,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
         widget.reviewMode &&
         widget.controls.isPlaying &&
         stopAt == null &&
-        _reviewPlaybackOwners[widget.controls] != _reviewOperationGeneration;
+        !_reviewPlaybackOwners.containsKey(widget.controls);
     if (followingContinuousPlayback) {
       final activeIndex = findActiveReviewLine(
         session.lines,

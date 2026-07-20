@@ -440,6 +440,77 @@ void main() {
   );
 
   testWidgets(
+    'stale delayed exact play never auto-follows after lines are replaced',
+    (tester) async {
+      final controls = DelayedPlaybackControls(delayPlay: true);
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          lines: [
+            SubtitleLine(index: 0, text: 'old first', startMs: 100, endMs: 200),
+            SubtitleLine(
+              index: 1,
+              text: 'old second',
+              startMs: 300,
+              endMs: 400,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: session,
+            child: Scaffold(
+              body: MarkingScaffold(controls: controls, reviewMode: true),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('review-play')));
+      await tester.pump();
+      session.importLines(const [
+        SubtitleLine(index: 0, text: 'new first', startMs: 100, endMs: 200),
+        SubtitleLine(index: 1, text: 'new second', startMs: 300, endMs: 400),
+      ]);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('review-next')));
+      await tester.pumpAndSettle();
+      controls.seekTestPosition(150);
+      await tester.pump();
+
+      controls.completePlay(0);
+      await tester.pump();
+
+      final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+      final secondRowMaterial = find.ancestor(
+        of: find.byKey(const ValueKey('line-row-1')),
+        matching: find.byType(Material),
+      );
+      expect(controls.playingValue, isFalse);
+      expect(
+        find.descendant(of: panel, matching: find.text('new second')),
+        findsOneWidget,
+      );
+      expect(find.text('Line 2 of 2'), findsOneWidget);
+      expect(
+        tester.widget<Material>(secondRowMaterial.first).color,
+        Theme.of(
+          tester.element(secondRowMaterial.first),
+        ).colorScheme.primaryContainer,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('review-flag')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('review-finish')));
+      await tester.pump();
+      expect(session.lines[0].isFullyMarked, isTrue);
+      expect(session.lines[1].isFullyMarked, isFalse);
+    },
+  );
+
+  testWidgets(
     'review auto-follow shows and highlights the active line and blanks gaps',
     (tester) async {
       final controls = FakePlaybackControls();
