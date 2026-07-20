@@ -80,26 +80,31 @@ class _KaraokeSettingsDialogState extends State<_KaraokeSettingsDialog> {
                     key: const ValueKey('karaoke-pre-display'),
                     groupValue: _preDisplay,
                     onChanged: (value) => setState(() => _preDisplay = value!),
-                    child: const Column(
+                    child: Column(
                       children: [
                         RadioListTile(
                           value: KaraokePreDisplay.off,
+                          enabled: preDisplayEnabled,
                           title: Text('Off'),
                         ),
                         RadioListTile(
                           value: KaraokePreDisplay.seconds3,
+                          enabled: preDisplayEnabled,
                           title: Text('3 seconds'),
                         ),
                         RadioListTile(
                           value: KaraokePreDisplay.seconds4,
+                          enabled: preDisplayEnabled,
                           title: Text('4 seconds'),
                         ),
                         RadioListTile(
                           value: KaraokePreDisplay.seconds5,
+                          enabled: preDisplayEnabled,
                           title: Text('5 seconds'),
                         ),
                         RadioListTile(
                           value: KaraokePreDisplay.oneLineAhead,
+                          enabled: preDisplayEnabled,
                           title: Text('One line ahead'),
                         ),
                       ],

@@ -66,11 +66,17 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     super.didChangeDependencies();
     final session = context.read<MarkingSession>();
     if (identical(session, _session)) return;
-    _session?.removeListener(_handleSessionChanged);
+    final oldSession = _session;
+    oldSession?.removeListener(_handleSessionChanged);
+    _invalidateKaraokeOperations();
+    _invalidateReviewOperations();
+    _hadAdvancedPass = false;
+    oldSession?.cancelAdvancedMarking();
     _session = session;
+    _keyHandler = null;
     _reviewLines = session.lines;
     session.addListener(_handleSessionChanged);
-    _invalidateReviewOperations();
+    if (oldSession != null) unawaited(widget.controls.pause());
   }
 
   void _handleSessionChanged() {
@@ -110,7 +116,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 
   void _handleControlsChanged() {
     if (!mounted) return;
-    final session = context.read<MarkingSession>();
+    final session = _session;
+    if (session == null) return;
     if (widget.controls.playbackRate != session.project.playbackRate) {
       session.setPlaybackRate(widget.controls.playbackRate);
     }
@@ -182,14 +189,16 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 
   @override
   void dispose() {
+    final session = _session;
+    session?.removeListener(_handleSessionChanged);
+    widget.controls.removeListener(_handleControlsChanged);
     _invalidateKaraokeOperations();
-    _session?.cancelAdvancedMarking();
+    _hadAdvancedPass = false;
+    session?.cancelAdvancedMarking();
     _invalidateReviewOperations();
     _resetExactReviewPlayback();
     _reviewFollowingPlayback = false;
     _reviewFollowIndex = null;
-    _session?.removeListener(_handleSessionChanged);
-    widget.controls.removeListener(_handleControlsChanged);
     _focusNode.dispose();
     super.dispose();
   }
@@ -199,6 +208,10 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     int index, {
     bool play = false,
   }) async {
+    final advanced = session.advancedMarking;
+    if (advanced != null && advanced.lineIndex != index) {
+      _cancelAdvancedPass();
+    }
     final operation = ++_reviewOperationGeneration;
     final controls = widget.controls;
     _resetExactReviewPlayback(controls: controls);

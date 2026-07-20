@@ -18,6 +18,12 @@ KeyUpEvent _spaceUp() => const KeyUpEvent(
   timeStamp: Duration.zero,
 );
 
+KeyRepeatEvent _spaceRepeat() => const KeyRepeatEvent(
+  physicalKey: PhysicalKeyboardKey.space,
+  logicalKey: LogicalKeyboardKey.space,
+  timeStamp: Duration.zero,
+);
+
 KeyDownEvent _backspaceDown() => const KeyDownEvent(
   physicalKey: PhysicalKeyboardKey.backspace,
   logicalKey: LogicalKeyboardKey.backspace,
@@ -46,6 +52,25 @@ void main() {
     position = 5200;
     expect(handler.handleKeyEvent(_spaceUp()), isFalse);
     expect(session.advancedMarking?.recordedStarts, [5100]);
+  });
+
+  test('Advanced ignores repeated Space events', () {
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(index: 0, text: 'one', startMs: 3000, endMs: 8000),
+        ],
+      ),
+    )..beginAdvancedMarking(0);
+    final handler = MarkingKeyHandler(
+      session: session,
+      getPositionMs: () => 5100,
+      seekTo: (_) {},
+    );
+    expect(handler.handleKeyEvent(_spaceRepeat()), isFalse);
+    expect(session.advancedMarking?.recordedStarts, isEmpty);
   });
 
   test('Advanced Backspace undoes a unit and seeks to its position', () {

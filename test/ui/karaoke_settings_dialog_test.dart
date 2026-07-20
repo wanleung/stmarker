@@ -80,13 +80,20 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Standard'));
       await tester.pump();
+      final group = tester.widget<RadioGroup<KaraokePreDisplay>>(
+        find.byKey(const ValueKey('karaoke-pre-display')),
+      );
+      expect(group.groupValue, KaraokePreDisplay.seconds5);
       expect(
         tester
-            .widget<RadioGroup<KaraokePreDisplay>>(
-              find.byKey(const ValueKey('karaoke-pre-display')),
+            .widgetList<RadioListTile<KaraokePreDisplay>>(
+              find.byType(RadioListTile<KaraokePreDisplay>),
             )
-            .groupValue,
-        KaraokePreDisplay.seconds5,
+            .every((tile) {
+              // ignore: deprecated_member_use
+              return tile.enabled == false && tile.onChanged == null;
+            }),
+        isTrue,
       );
       expect(
         find.byKey(const ValueKey('karaoke-pre-display-disabled')),

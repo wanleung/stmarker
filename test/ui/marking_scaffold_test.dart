@@ -155,6 +155,230 @@ void main() {
     expect(controls.playCalls, 0);
     expect(session.advancedMarking, isNull);
   });
+
+  testWidgets('selecting another review line cancels an active Advanced pass', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(index: 0, text: 'one', startMs: 5000, endMs: 9000),
+          SubtitleLine(index: 1, text: 'two', startMs: 10000, endMs: 12000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Mark words'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('review-next')));
+    await tester.pump();
+    expect(session.advancedMarking, isNull);
+    expect(controls.lastSeek, 10000);
+  });
+
+  testWidgets(
+    'selecting another line invalidates an Advanced pass pending pause',
+    (tester) async {
+      final controls = DelayedPlaybackControls(delayPause: true);
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          karaokeMode: KaraokeMode.karaokeAdvanced,
+          lines: [
+            SubtitleLine(index: 0, text: 'one', startMs: 5000, endMs: 9000),
+            SubtitleLine(index: 1, text: 'two', startMs: 10000, endMs: 12000),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: session,
+            child: Scaffold(
+              body: MarkingScaffold(controls: controls, reviewMode: true),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Mark words'));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('review-next')));
+      await tester.pump();
+      controls.completePause(0);
+      await tester.pump();
+      expect(session.advancedMarking, isNull);
+      expect(controls.pendingSeekCount, 0);
+    },
+  );
+
+  testWidgets(
+    'replacing the provided session cancels old async work and rebinds keys',
+    (tester) async {
+      final controls = DelayedPlaybackControls(delaySeek: true);
+      final oldSession = MarkingSession(
+        const Project(
+          mediaPath: '/old.mp3',
+          karaokeMode: KaraokeMode.karaokeAdvanced,
+          lines: [
+            SubtitleLine(index: 0, text: 'old', startMs: 5000, endMs: 9000),
+          ],
+        ),
+      );
+      final newSession = MarkingSession(
+        const Project(
+          mediaPath: '/new.mp3',
+          lines: [SubtitleLine(index: 0, text: 'new')],
+        ),
+      );
+      Widget app(MarkingSession session) => MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      );
+      await tester.pumpWidget(app(oldSession));
+      await tester.tap(find.text('Mark words'));
+      await tester.pump();
+      await tester.pumpWidget(app(newSession));
+      controls.completeSeek(0);
+      await tester.pump();
+      expect(oldSession.advancedMarking, isNull);
+      expect(controls.playCalls, 0);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: newSession,
+            child: Scaffold(body: MarkingScaffold(controls: controls)),
+          ),
+        ),
+      );
+      controls.seekTestPosition(1100);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+      controls.seekTestPosition(2200);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(newSession.lines.single.startMs, 1100);
+      expect(newSession.lines.single.endMs, 2200);
+      expect(oldSession.lines.single.startMs, 5000);
+    },
+  );
+  testWidgets('Advanced Backspace undoes and uses the pre-roll fallback', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(index: 0, text: 'one two', startMs: 1500, endMs: 9000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Mark words'));
+    await tester.pump();
+    controls.seekTestPosition(5100);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+    expect(controls.lastSeek, 5100);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+    expect(controls.lastSeek, 0);
+  });
+
+  testWidgets('the final Advanced unit pauses playback', (tester) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(index: 0, text: 'one', startMs: 1500, endMs: 9000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Mark words'));
+    await tester.pump();
+    expect(controls.playingValue, isTrue);
+    controls.seekTestPosition(5100);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(session.advancedMarking?.isComplete, isTrue);
+    expect(controls.playingValue, isFalse);
+  });
+
+  testWidgets('mode change makes a delayed play completion pause again', (
+    tester,
+  ) async {
+    final controls = DelayedPlaybackControls(delayPlay: true);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(index: 0, text: 'one', startMs: 1500, endMs: 9000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Mark words'));
+    await tester.pump();
+    session.setKaraokeSettings(
+      mode: KaraokeMode.standard,
+      preDisplay: KaraokePreDisplay.off,
+    );
+    await tester.pump();
+    controls.completePlay(0);
+    await tester.pump();
+    expect(session.advancedMarking, isNull);
+    expect(controls.playingValue, isFalse);
+  });
+
   testWidgets('cancelling review appearance leaves the session unchanged', (
     tester,
   ) async {
