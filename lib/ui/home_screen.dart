@@ -93,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final project = await ProjectStore.load(path);
     session.loadProject(project);
     await _player.open(project.mediaPath);
+    await _player.setRate(project.playbackRate);
   }
 
   Future<void> _exportSrt(MarkingSession session) async {
