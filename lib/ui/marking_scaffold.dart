@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,12 +15,20 @@ import 'widgets/player_controls_bar.dart';
 /// [PlaybackControls]. [HomeScreen] is the composition root that supplies a
 /// real media_kit-backed controller.
 class MarkingScaffold extends StatefulWidget {
-  const MarkingScaffold({super.key, required this.controls, this.videoArea});
+  const MarkingScaffold({
+    super.key,
+    required this.controls,
+    this.videoArea,
+    this.reviewMode = false,
+    this.onReviewFinished,
+  });
 
   final PlaybackControls controls;
 
   /// Optional widget (e.g. a media_kit `Video`) shown above the controls bar.
   final Widget? videoArea;
+  final bool reviewMode;
+  final VoidCallback? onReviewFinished;
 
   @override
   State<MarkingScaffold> createState() => _MarkingScaffoldState();
@@ -27,25 +37,148 @@ class MarkingScaffold extends StatefulWidget {
 class _MarkingScaffoldState extends State<MarkingScaffold> {
   final _focusNode = FocusNode();
   MarkingKeyHandler? _keyHandler;
+  int _reviewIndex = 0;
+  final Set<int> _reviewFlagged = {};
+  int? _reviewStopAtMs;
 
   @override
   void initState() {
     super.initState();
-    widget.controls.addListener(_syncPlaybackRate);
+    widget.controls.addListener(_handleControlsChanged);
   }
 
-  void _syncPlaybackRate() {
+  void _handleControlsChanged() {
+    if (!mounted) return;
     final session = context.read<MarkingSession>();
     if (widget.controls.playbackRate != session.project.playbackRate) {
       session.setPlaybackRate(widget.controls.playbackRate);
+    }
+    final stopAt = _reviewStopAtMs;
+    if (widget.reviewMode &&
+        stopAt != null &&
+        widget.controls.positionMs >= stopAt) {
+      _reviewStopAtMs = null;
+      unawaited(widget.controls.pause());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MarkingScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controls != widget.controls) {
+      oldWidget.controls.removeListener(_handleControlsChanged);
+      widget.controls.addListener(_handleControlsChanged);
+      _keyHandler = null;
+    }
+    if (!oldWidget.reviewMode && widget.reviewMode) {
+      _reviewIndex = 0;
+      _reviewFlagged.clear();
+      _reviewStopAtMs = null;
+    } else if (oldWidget.reviewMode && !widget.reviewMode) {
+      _reviewStopAtMs = null;
+      _reviewFlagged.clear();
     }
   }
 
   @override
   void dispose() {
-    widget.controls.removeListener(_syncPlaybackRate);
+    widget.controls.removeListener(_handleControlsChanged);
     _focusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _selectReviewLine(
+    MarkingSession session,
+    int index, {
+    bool play = false,
+  }) async {
+    if (index < 0 || index >= session.lines.length) return;
+    final line = session.lines[index];
+    if (!line.isFullyMarked) return;
+    setState(() {
+      _reviewIndex = index;
+      _reviewStopAtMs = null;
+    });
+    await widget.controls.pause();
+    await widget.controls.seek(line.startMs!);
+    if (play) {
+      _reviewStopAtMs = line.endMs;
+      await widget.controls.play();
+    }
+  }
+
+  void _toggleReviewFlag() {
+    setState(() {
+      if (!_reviewFlagged.add(_reviewIndex)) {
+        _reviewFlagged.remove(_reviewIndex);
+      }
+    });
+  }
+
+  void _finishReview(MarkingSession session) {
+    _reviewStopAtMs = null;
+    unawaited(widget.controls.pause());
+    session.clearLineTimestamps(_reviewFlagged);
+    widget.onReviewFinished?.call();
+  }
+
+  Widget _buildReviewBar(MarkingSession session) {
+    final count = session.lines.length;
+    final flagged = _reviewFlagged.contains(_reviewIndex);
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          children: [
+            IconButton(
+              key: const ValueKey('review-previous'),
+              tooltip: 'Previous line',
+              onPressed: _reviewIndex > 0
+                  ? () => _selectReviewLine(session, _reviewIndex - 1)
+                  : null,
+              icon: const Icon(Icons.skip_previous),
+            ),
+            Text('Line ${_reviewIndex + 1} of $count'),
+            IconButton(
+              key: const ValueKey('review-play'),
+              tooltip: 'Play this line',
+              onPressed: count == 0
+                  ? null
+                  : () => _selectReviewLine(session, _reviewIndex, play: true),
+              icon: const Icon(Icons.play_arrow),
+            ),
+            IconButton(
+              key: const ValueKey('review-next'),
+              tooltip: 'Next line',
+              onPressed: _reviewIndex + 1 < count
+                  ? () => _selectReviewLine(session, _reviewIndex + 1)
+                  : null,
+              icon: const Icon(Icons.skip_next),
+            ),
+            FilterChip(
+              key: const ValueKey('review-flag'),
+              selected: flagged,
+              onSelected: count == 0 ? null : (_) => _toggleReviewFlag(),
+              avatar: const Icon(Icons.replay, size: 18),
+              label: const Text('Needs redo'),
+            ),
+            FilledButton(
+              key: const ValueKey('review-finish'),
+              onPressed: () => _finishReview(session),
+              child: Text(
+                _reviewFlagged.isEmpty
+                    ? 'Finish review'
+                    : 'Redo ${_reviewFlagged.length} flagged',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _editRow(
@@ -69,6 +202,9 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<MarkingSession>();
+    final reviewIndex = session.lines.isEmpty
+        ? null
+        : _reviewIndex.clamp(0, session.lines.length - 1);
     _keyHandler ??= MarkingKeyHandler(
       session: session,
       getPositionMs: () => widget.controls.positionMs,
@@ -78,20 +214,55 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
-      onKeyEvent: (node, event) => (_keyHandler?.handleKeyEvent(event) ?? false)
+      onKeyEvent: (node, event) =>
+          (!widget.reviewMode && (_keyHandler?.handleKeyEvent(event) ?? false))
           ? KeyEventResult.handled
           : KeyEventResult.ignored,
       child: Column(
         children: [
           if (widget.videoArea != null)
             SizedBox(height: 240, child: widget.videoArea),
+          if (widget.reviewMode && reviewIndex != null)
+            _ReviewSubtitlePanel(text: session.lines[reviewIndex].text),
           ExcludeFocus(child: PlayerControlsBar(controls: widget.controls)),
+          if (widget.reviewMode) _buildReviewBar(session),
           Expanded(
             child: LineListView(
-              onRowTap: (index) => _editRow(context, session, index),
+              selectedIndex: widget.reviewMode ? reviewIndex : null,
+              flaggedIndices: widget.reviewMode ? _reviewFlagged : const {},
+              onRowTap: widget.reviewMode
+                  ? (index) => _selectReviewLine(session, index)
+                  : (index) => _editRow(context, session, index),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReviewSubtitlePanel extends StatelessWidget {
+  const _ReviewSubtitlePanel({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('review-subtitle-panel'),
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      color: Theme.of(context).colorScheme.inverseSurface,
+      alignment: Alignment.center,
+      child: Text(
+        text,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onInverseSurface,
+        ),
       ),
     );
   }

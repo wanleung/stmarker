@@ -186,4 +186,178 @@ void main() {
       expect(session.lines[0].endMs, 3400);
     },
   );
+
+  testWidgets('review plays only the selected subtitle interval', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 500, endMs: 900),
+          SubtitleLine(index: 1, text: 'second', startMs: 1200, endMs: 1800),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-next')));
+    await tester.pump();
+    expect(controls.lastSeek, 1200);
+
+    await tester.tap(find.byKey(const ValueKey('review-play')));
+    await tester.pump();
+    expect(controls.lastSeek, 1200);
+    expect(controls.playingValue, isTrue);
+
+    controls.seekTestPosition(1800);
+    await tester.pump();
+    expect(controls.playingValue, isFalse);
+  });
+
+  testWidgets('finishing review clears all lines flagged for redo', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 500, endMs: 900),
+          SubtitleLine(index: 1, text: 'second', startMs: 1200, endMs: 1800),
+        ],
+      ),
+    );
+    var finished = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(
+              controls: controls,
+              reviewMode: true,
+              onReviewFinished: () => finished = true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-flag')));
+    await tester.tap(find.byKey(const ValueKey('review-next')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('review-flag')));
+    await tester.tap(find.byKey(const ValueKey('review-finish')));
+    await tester.pump();
+
+    expect(session.lines.every((line) => !line.isFullyMarked), isTrue);
+    expect(session.currentIndex, 0);
+    expect(finished, isTrue);
+  });
+
+  testWidgets('marking keyboard shortcuts are disabled during review', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 500, endMs: 900),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+
+    expect(session.lines.single.isFullyMarked, isTrue);
+  });
+
+  testWidgets('review shows the selected line beneath the video', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(
+            index: 0,
+            text: 'focused review text',
+            startMs: 500,
+            endMs: 900,
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(
+              controls: controls,
+              reviewMode: true,
+              videoArea: const ColoredBox(color: Colors.black),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+    expect(panel, findsOneWidget);
+    expect(
+      find.descendant(of: panel, matching: find.text('focused review text')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('normal marking mode does not show the review subtitle panel', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [SubtitleLine(index: 0, text: 'not over video')],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(body: MarkingScaffold(controls: controls)),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('review-subtitle-panel')), findsNothing);
+  });
 }
