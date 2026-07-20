@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import '../models/subtitle_line.dart';
 import '../player/media_player_controller.dart';
 import '../services/ass_export_coordinator.dart';
+import '../services/asset_bytes_loader.dart';
+import '../services/export_integration_support.dart';
 import '../services/ffmpeg_export_service.dart';
 import '../services/lrc_codec.dart';
 import '../services/project_store.dart';
@@ -29,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final MediaPlayerController _player;
   late final VideoController _videoController;
   late final FfmpegExportService _ffmpeg;
+  late final AssetBytesLoader _loadAsset;
   static const _mediaExtensions = [
     'mp4',
     'mkv',
@@ -59,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _player = MediaPlayerController();
     _videoController = VideoController(_player.player);
     _ffmpeg = FfmpegExportService();
+    _loadAsset = bundleAssetLoader(rootBundle);
   }
 
   @override
@@ -99,14 +103,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _runAction(String label, Future<void> Function() action) async {
-    try {
-      await action();
-    } catch (error) {
+    await runExportAction(label, action, (message) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('$label failed: $error')));
-    }
+      ).showSnackBar(SnackBar(content: Text(message)));
+    });
   }
 
   Future<void> _importSubtitleFile(MarkingSession session) async {
@@ -204,11 +206,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<bool> _confirmExportWarnings(MarkingSession session) async {
-    final invalidCount = SrtCodec.invalidLines(session.lines).length;
-    final incompleteCount = session.lines
-        .where((line) => !line.isFullyMarked)
-        .length;
-    return _confirmExportWarningCounts(invalidCount, incompleteCount);
+    final warnings = exportWarnings(session.lines);
+    return _confirmExportWarningCounts(
+      warnings.invalidCount,
+      warnings.incompleteCount,
+    );
   }
 
   Future<bool> _confirmExportWarningCounts(
@@ -221,9 +223,10 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (dialogContext) => AlertDialog(
           title: const Text('Export warnings'),
           content: Text(
-            '${invalidCount == 0 ? '' : '$invalidCount line(s) have invalid ranges. '}'
-            '${incompleteCount == 0 ? '' : '$incompleteCount incomplete line(s) will be skipped. '}'
-            'Export anyway?',
+            ExportWarnings(
+              invalidCount: invalidCount,
+              incompleteCount: incompleteCount,
+            ).message,
           ),
           actions: [
             TextButton(
@@ -242,11 +245,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return true;
   }
 
-  Future<Uint8List> _loadAssetBytes(String assetPath) async {
-    final data = await rootBundle.load(assetPath);
-    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-  }
-
   Future<void> _exportSrt(MarkingSession session) async {
     if (!await _confirmExportWarnings(session)) return;
 
@@ -259,20 +257,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _exportAss(MarkingSession session) async {
-    final path = await FilePicker.saveFile(
-      dialogTitle: 'Export ASS',
-      fileName: 'export.ass',
-    );
-    if (path == null || !mounted) return;
-
-    final exported = await AssExportCoordinator().export(
-      outputPath: path,
+    await AssExportCoordinator().export(
+      choosePath: ({required defaultFileName}) => FilePicker.saveFile(
+        dialogTitle: 'Export ASS',
+        fileName: defaultFileName,
+      ),
       lines: session.lines,
       face: SubtitleFontCatalog.byId(session.project.subtitleFontFamily),
       fontSize: session.project.subtitleFontSize,
-      loadAsset: _loadAssetBytes,
+      loadAsset: _loadAsset,
+      isActive: () => mounted,
       confirmWarnings: _confirmExportWarningCounts,
       confirmCompanionReplacement: (companionPath) async {
+        if (!mounted) return false;
         final replace = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
@@ -295,12 +292,10 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         return replace == true;
       },
+      showSuccess: (message) => ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message))),
     );
-    if (exported && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ASS subtitles exported to $path')),
-      );
-    }
   }
 
   Future<void> _exportVideo(MarkingSession session) async {
@@ -396,17 +391,16 @@ class _HomeScreenState extends State<HomeScreen> {
     ).whenComplete(() => dialogOpen = false);
 
     try {
+      final settings = buildVideoExportSettings(session.project, _loadAsset);
       await _ffmpeg.export(
         inputPath: session.project.mediaPath,
         outputPath: outputPath,
         subtitleContent: SrtCodec.encode(session.lines),
         mode: mode,
         durationMs: _player.durationMs,
-        subtitleFont: SubtitleFontCatalog.byId(
-          session.project.subtitleFontFamily,
-        ),
-        subtitleFontSize: session.project.subtitleFontSize,
-        loadAsset: _loadAssetBytes,
+        subtitleFont: settings.subtitleFont,
+        subtitleFontSize: settings.subtitleFontSize,
+        loadAsset: settings.loadAsset,
         onProgress: (value) => progress.value = value,
       );
       if (mounted) {

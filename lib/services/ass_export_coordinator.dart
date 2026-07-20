@@ -1,9 +1,12 @@
+import '../models/subtitle_line.dart';
+import '../subtitle_fonts/subtitle_font_catalog.dart';
 import 'ass_codec.dart';
 import 'ass_export_service.dart';
 import 'asset_bytes_loader.dart';
-import '../models/subtitle_line.dart';
-import '../subtitle_fonts/subtitle_font_catalog.dart';
+import 'export_integration_support.dart';
 
+typedef AssPathPicker =
+    Future<String?> Function({required String defaultFileName});
 typedef AssWarningConfirmation =
     Future<bool> Function(int invalidCount, int incompleteCount);
 typedef AssCompanionReplacementConfirmation =
@@ -15,6 +18,8 @@ typedef AssPackageExporter =
       required SubtitleFontFace face,
       required AssetBytesLoader loadAsset,
     });
+
+enum AssExportResult { cancelled, exported }
 
 final class AssExportCoordinator {
   AssExportCoordinator({
@@ -28,25 +33,40 @@ final class AssExportCoordinator {
   final Future<bool> Function(String outputPath) _wouldReplaceCompanions;
   final AssPackageExporter _exportPackage;
 
-  Future<bool> export({
-    required String outputPath,
+  Future<AssExportResult> export({
+    required AssPathPicker choosePath,
     required List<SubtitleLine> lines,
     required SubtitleFontFace face,
     required double fontSize,
     required AssetBytesLoader loadAsset,
+    required bool Function() isActive,
     required AssWarningConfirmation confirmWarnings,
     required AssCompanionReplacementConfirmation confirmCompanionReplacement,
+    required void Function(String message) showSuccess,
   }) async {
-    final invalidCount = lines.where((line) => line.hasInvalidRange).length;
-    final incompleteCount = lines.where((line) => !line.isFullyMarked).length;
-    if ((invalidCount > 0 || incompleteCount > 0) &&
-        !await confirmWarnings(invalidCount, incompleteCount)) {
-      return false;
+    if (!isActive()) return AssExportResult.cancelled;
+    final warnings = exportWarnings(lines);
+    if (!warnings.isEmpty) {
+      if (!await confirmWarnings(
+            warnings.invalidCount,
+            warnings.incompleteCount,
+          ) ||
+          !isActive()) {
+        return AssExportResult.cancelled;
+      }
     }
 
-    if (await _wouldReplaceCompanions(outputPath)) {
-      final companionPath = AssExportService.companionDirectoryFor(outputPath);
-      if (!await confirmCompanionReplacement(companionPath)) return false;
+    final outputPath = await choosePath(defaultFileName: 'export.ass');
+    if (outputPath == null || !isActive()) return AssExportResult.cancelled;
+
+    final replacesCompanions = await _wouldReplaceCompanions(outputPath);
+    if (!isActive()) return AssExportResult.cancelled;
+    if (replacesCompanions &&
+        (!await confirmCompanionReplacement(
+              AssExportService.companionDirectoryFor(outputPath),
+            ) ||
+            !isActive())) {
+      return AssExportResult.cancelled;
     }
 
     await _exportPackage(
@@ -59,6 +79,7 @@ final class AssExportCoordinator {
       face: face,
       loadAsset: loadAsset,
     );
-    return true;
+    if (isActive()) showSuccess('ASS subtitles exported to $outputPath');
+    return AssExportResult.exported;
   }
 }
