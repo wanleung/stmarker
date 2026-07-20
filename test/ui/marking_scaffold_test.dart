@@ -353,6 +353,92 @@ void main() {
     },
   );
 
+  testWidgets('review auto-follow resumes after lines replace exact playback', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [SubtitleLine(index: 0, text: 'old', startMs: 100, endMs: 200)],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-play')));
+    await tester.pump();
+    expect(controls.playingValue, isTrue);
+    session.importLines(const [
+      SubtitleLine(index: 0, text: 'first', startMs: 300, endMs: 400),
+      SubtitleLine(index: 1, text: 'second', startMs: 500, endMs: 600),
+    ]);
+    await tester.pump();
+
+    await controls.play();
+    controls.seekTestPosition(550);
+    await tester.pump();
+
+    final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+    expect(
+      find.descendant(of: panel, matching: find.text('second')),
+      findsOneWidget,
+    );
+    expect(find.text('Line 2 of 2'), findsOneWidget);
+  });
+
+  testWidgets(
+    'review auto-follow resumes after review exit resets exact playback',
+    (tester) async {
+      final controls = FakePlaybackControls();
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          lines: [
+            SubtitleLine(index: 0, text: 'first', startMs: 100, endMs: 200),
+            SubtitleLine(index: 1, text: 'second', startMs: 300, endMs: 400),
+          ],
+        ),
+      );
+      Widget app({required bool reviewMode}) => MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: reviewMode),
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(app(reviewMode: true));
+      await tester.tap(find.byKey(const ValueKey('review-play')));
+      await tester.pump();
+      expect(controls.playingValue, isTrue);
+      await tester.pumpWidget(app(reviewMode: false));
+      await tester.pump();
+      await tester.pumpWidget(app(reviewMode: true));
+      await tester.pump();
+
+      await controls.play();
+      controls.seekTestPosition(350);
+      await tester.pump();
+
+      final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+      expect(
+        find.descendant(of: panel, matching: find.text('second')),
+        findsOneWidget,
+      );
+      expect(find.text('Line 2 of 2'), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'review auto-follow shows and highlights the active line and blanks gaps',
     (tester) async {

@@ -71,7 +71,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     if (session == null || identical(_reviewLines, session.lines)) return;
     _reviewLines = session.lines;
     _invalidateReviewOperations();
-    _reviewStopAtMs = null;
+    _resetExactReviewPlayback();
     _reviewFollowingPlayback = false;
     _reviewFollowIndex = null;
     _reviewFlagged.clear();
@@ -80,6 +80,17 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 
   void _invalidateReviewOperations() {
     _reviewOperationGeneration++;
+  }
+
+  void _resetExactReviewPlayback({
+    PlaybackControls? controls,
+    bool preservePendingOwner = true,
+  }) {
+    _reviewStopAtMs = null;
+    final target = controls ?? widget.controls;
+    if (!preservePendingOwner || target.isPlaying) {
+      _reviewPlaybackOwners.remove(target);
+    }
   }
 
   void _handleControlsChanged() {
@@ -92,15 +103,14 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     if (widget.reviewMode &&
         stopAt != null &&
         widget.controls.positionMs >= stopAt) {
-      _reviewStopAtMs = null;
-      _reviewPlaybackOwners.remove(widget.controls);
+      _resetExactReviewPlayback(preservePendingOwner: false);
       unawaited(widget.controls.pause());
     }
     final followingContinuousPlayback =
         widget.reviewMode &&
         widget.controls.isPlaying &&
         stopAt == null &&
-        !_reviewPlaybackOwners.containsKey(widget.controls);
+        _reviewPlaybackOwners[widget.controls] != _reviewOperationGeneration;
     if (followingContinuousPlayback) {
       final activeIndex = findActiveReviewLine(
         session.lines,
@@ -126,6 +136,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controls != widget.controls) {
       _invalidateReviewOperations();
+      _resetExactReviewPlayback(controls: oldWidget.controls);
       unawaited(oldWidget.controls.pause());
       oldWidget.controls.removeListener(_handleControlsChanged);
       widget.controls.addListener(_handleControlsChanged);
@@ -137,13 +148,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       _invalidateReviewOperations();
       _reviewIndex = 0;
       _reviewFlagged.clear();
-      _reviewStopAtMs = null;
+      _resetExactReviewPlayback();
       _reviewFollowingPlayback = false;
       _reviewFollowIndex = null;
       _reviewLines = _session?.lines;
     } else if (oldWidget.reviewMode && !widget.reviewMode) {
       _invalidateReviewOperations();
-      _reviewStopAtMs = null;
+      _resetExactReviewPlayback();
       _reviewFollowingPlayback = false;
       _reviewFollowIndex = null;
       _reviewFlagged.clear();
@@ -154,6 +165,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   @override
   void dispose() {
     _invalidateReviewOperations();
+    _resetExactReviewPlayback();
     _reviewFollowingPlayback = false;
     _reviewFollowIndex = null;
     _session?.removeListener(_handleSessionChanged);
@@ -169,14 +181,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   }) async {
     final operation = ++_reviewOperationGeneration;
     final controls = widget.controls;
-    if (controls.isPlaying) _reviewPlaybackOwners.remove(controls);
+    _resetExactReviewPlayback(controls: controls);
     final lines = session.lines;
     if (index < 0 || index >= session.lines.length) return;
     final line = session.lines[index];
     if (!line.isFullyMarked) return;
     setState(() {
       _reviewIndex = index;
-      _reviewStopAtMs = null;
     });
     await controls.pause();
     if (!_isCurrentReviewOperation(operation, controls, session, lines)) return;
@@ -229,7 +240,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 
   void _finishReview(MarkingSession session) {
     _invalidateReviewOperations();
-    _reviewStopAtMs = null;
+    _resetExactReviewPlayback();
     _reviewFollowingPlayback = false;
     _reviewFollowIndex = null;
     unawaited(widget.controls.pause());
