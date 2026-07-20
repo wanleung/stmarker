@@ -40,11 +40,40 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   int _reviewIndex = 0;
   final Set<int> _reviewFlagged = {};
   int? _reviewStopAtMs;
+  int _reviewOperationGeneration = 0;
+  MarkingSession? _session;
+  List<SubtitleLine>? _reviewLines;
 
   @override
   void initState() {
     super.initState();
     widget.controls.addListener(_handleControlsChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final session = context.read<MarkingSession>();
+    if (identical(session, _session)) return;
+    _session?.removeListener(_handleSessionChanged);
+    _session = session;
+    _reviewLines = session.lines;
+    session.addListener(_handleSessionChanged);
+    _invalidateReviewOperations();
+  }
+
+  void _handleSessionChanged() {
+    final session = _session;
+    if (session == null || identical(_reviewLines, session.lines)) return;
+    _reviewLines = session.lines;
+    _invalidateReviewOperations();
+    _reviewStopAtMs = null;
+    _reviewFlagged.clear();
+    if (mounted && widget.reviewMode) setState(() {});
+  }
+
+  void _invalidateReviewOperations() {
+    _reviewOperationGeneration++;
   }
 
   void _handleControlsChanged() {
@@ -66,15 +95,19 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   void didUpdateWidget(covariant MarkingScaffold oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controls != widget.controls) {
+      _invalidateReviewOperations();
       oldWidget.controls.removeListener(_handleControlsChanged);
       widget.controls.addListener(_handleControlsChanged);
       _keyHandler = null;
     }
     if (!oldWidget.reviewMode && widget.reviewMode) {
+      _invalidateReviewOperations();
       _reviewIndex = 0;
       _reviewFlagged.clear();
       _reviewStopAtMs = null;
+      _reviewLines = _session?.lines;
     } else if (oldWidget.reviewMode && !widget.reviewMode) {
+      _invalidateReviewOperations();
       _reviewStopAtMs = null;
       _reviewFlagged.clear();
     }
@@ -82,6 +115,8 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 
   @override
   void dispose() {
+    _invalidateReviewOperations();
+    _session?.removeListener(_handleSessionChanged);
     widget.controls.removeListener(_handleControlsChanged);
     _focusNode.dispose();
     super.dispose();
@@ -92,6 +127,9 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     int index, {
     bool play = false,
   }) async {
+    final operation = ++_reviewOperationGeneration;
+    final controls = widget.controls;
+    final lines = session.lines;
     if (index < 0 || index >= session.lines.length) return;
     final line = session.lines[index];
     if (!line.isFullyMarked) return;
@@ -99,13 +137,31 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       _reviewIndex = index;
       _reviewStopAtMs = null;
     });
-    await widget.controls.pause();
-    await widget.controls.seek(line.startMs!);
+    await controls.pause();
+    if (!_isCurrentReviewOperation(operation, controls, session, lines)) return;
+    await controls.seek(line.startMs!);
+    if (!_isCurrentReviewOperation(operation, controls, session, lines)) return;
     if (play) {
       _reviewStopAtMs = line.endMs;
-      await widget.controls.play();
+      await controls.play();
+      if (!_isCurrentReviewOperation(operation, controls, session, lines)) {
+        await controls.pause();
+      }
     }
   }
+
+  bool _isCurrentReviewOperation(
+    int operation,
+    PlaybackControls controls,
+    MarkingSession session,
+    List<SubtitleLine> lines,
+  ) =>
+      mounted &&
+      widget.reviewMode &&
+      operation == _reviewOperationGeneration &&
+      identical(widget.controls, controls) &&
+      identical(_session, session) &&
+      identical(session.lines, lines);
 
   int? _safeReviewIndex(MarkingSession session) {
     if (session.lines.isEmpty) return null;
@@ -128,12 +184,14 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   }
 
   void _finishReview(MarkingSession session) {
+    _invalidateReviewOperations();
     _reviewStopAtMs = null;
     unawaited(widget.controls.pause());
     final reviewIndex = _safeReviewIndex(session);
     session.clearLineTimestamps(
       reviewIndex == null ? const <int>{} : _validReviewFlags(session),
     );
+    _reviewFlagged.clear();
     widget.onReviewFinished?.call();
   }
 

@@ -371,16 +371,22 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: 'Paste lines',
             icon: const Icon(Icons.text_snippet),
-            onPressed: () =>
-                _runAction('Paste lines', () => _pasteLinesDialog(session)),
+            onPressed: _reviewMode
+                ? null
+                : () => _runAction(
+                    'Paste lines',
+                    () => _pasteLinesDialog(session),
+                  ),
           ),
           IconButton(
             tooltip: 'Import SRT/LRC',
             icon: const Icon(Icons.subtitles),
-            onPressed: () => _runAction(
-              'Import subtitles',
-              () => _importSubtitleFile(session),
-            ),
+            onPressed: _reviewMode
+                ? null
+                : () => _runAction(
+                    'Import subtitles',
+                    () => _importSubtitleFile(session),
+                  ),
           ),
           IconButton(
             tooltip: 'Load video/audio',
@@ -391,8 +397,9 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: 'Open project',
             icon: const Icon(Icons.file_open),
-            onPressed: () =>
-                _runAction('Open project', () => _openProject(session)),
+            onPressed: _reviewMode
+                ? null
+                : () => _runAction('Open project', () => _openProject(session)),
           ),
           IconButton(
             tooltip: 'Save project',

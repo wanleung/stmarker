@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -490,4 +492,159 @@ void main() {
       expect(session.lines.single.isFullyMarked, isFalse);
     },
   );
+
+  testWidgets('rapid review selection cannot resume stale playback', (
+    tester,
+  ) async {
+    final controls = DelayedPlaybackControls(delayPause: true);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 100, endMs: 200),
+          SubtitleLine(index: 1, text: 'second', startMs: 300, endMs: 400),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-play')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('review-next')));
+    await tester.pump();
+
+    controls.completePause(1);
+    await tester.pump();
+    expect(controls.lastSeek, 300);
+
+    controls.completePause(0);
+    await tester.pump();
+    expect(controls.lastSeek, 300);
+    expect(controls.playCalls, 0);
+  });
+
+  testWidgets('leaving review during a pending seek cannot start playback', (
+    tester,
+  ) async {
+    final controls = DelayedPlaybackControls(delaySeek: true);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 100, endMs: 200),
+        ],
+      ),
+    );
+
+    Widget app({required bool reviewMode}) => MaterialApp(
+      home: ChangeNotifierProvider.value(
+        value: session,
+        child: Scaffold(
+          body: MarkingScaffold(controls: controls, reviewMode: reviewMode),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(app(reviewMode: true));
+    await tester.tap(find.byKey(const ValueKey('review-play')));
+    await tester.pump();
+    expect(controls.pendingSeekCount, 1);
+
+    await tester.pumpWidget(app(reviewMode: false));
+    controls.completeSeek(0);
+    await tester.pump();
+
+    expect(controls.playCalls, 0);
+    expect(controls.playingValue, isFalse);
+  });
+
+  testWidgets('replacing lines discards review flags before finish', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [SubtitleLine(index: 0, text: 'old', startMs: 100, endMs: 200)],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-flag')));
+    await tester.pump();
+    session.importLines(const [
+      SubtitleLine(index: 0, text: 'replacement', startMs: 500, endMs: 600),
+    ]);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('review-finish')));
+    await tester.pump();
+
+    expect(session.lines.single.text, 'replacement');
+    expect(session.lines.single.startMs, 500);
+    expect(session.lines.single.endMs, 600);
+  });
+}
+
+class DelayedPlaybackControls extends FakePlaybackControls {
+  DelayedPlaybackControls({this.delayPause = false, this.delaySeek = false});
+
+  final bool delayPause;
+  final bool delaySeek;
+  final List<Completer<void>> _pauses = [];
+  final List<Completer<void>> _seeks = [];
+  final List<int> _seekTargets = [];
+  int playCalls = 0;
+
+  int get pendingSeekCount => _seeks.length;
+
+  @override
+  Future<void> pause() {
+    if (!delayPause) return super.pause();
+    playingValue = false;
+    notifyListeners();
+    final completer = Completer<void>();
+    _pauses.add(completer);
+    return completer.future;
+  }
+
+  void completePause(int index) => _pauses[index].complete();
+
+  @override
+  Future<void> seek(int ms) {
+    if (!delaySeek) return super.seek(ms);
+    final completer = Completer<void>();
+    _seeks.add(completer);
+    _seekTargets.add(ms);
+    return completer.future.then(
+      (_) => super.seek(_seekTargets[indexOf(completer)]),
+    );
+  }
+
+  int indexOf(Completer<void> completer) => _seeks.indexOf(completer);
+
+  void completeSeek(int index) => _seeks[index].complete();
+
+  @override
+  Future<void> play() {
+    playCalls++;
+    return super.play();
+  }
 }
