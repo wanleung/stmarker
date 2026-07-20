@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/project.dart';
 import '../models/subtitle_line.dart';
+import '../subtitle_fonts/subtitle_font_catalog.dart';
 
 class MarkingSession extends ChangeNotifier {
   MarkingSession(this._project)
@@ -108,6 +109,20 @@ class MarkingSession extends ChangeNotifier {
 
   void setPlaybackRate(double rate) {
     _project = _project.copyWith(playbackRate: rate);
+    notifyListeners();
+  }
+
+  void setSubtitleAppearance({
+    required String fontFamily,
+    required double fontSize,
+  }) {
+    final validatedSize = fontSize.isFinite
+        ? fontSize.clamp(minimumSubtitleFontSize, maximumSubtitleFontSize)
+        : defaultSubtitleFontSize;
+    _project = _project.copyWith(
+      subtitleFontFamily: SubtitleFontCatalog.byId(fontFamily).id,
+      subtitleFontSize: validatedSize,
+    );
     notifyListeners();
   }
 

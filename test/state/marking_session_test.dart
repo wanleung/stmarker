@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/state/marking_session.dart';
+import 'package:stmarker/subtitle_fonts/subtitle_font_catalog.dart';
 
 Project _project(List<SubtitleLine> lines) =>
     Project(mediaPath: '/tmp/x.mp3', lines: lines);
@@ -206,5 +207,33 @@ void main() {
     expect(session.lines[2], const SubtitleLine(index: 2, text: 'c'));
     expect(session.currentIndex, 0);
     expect(notifications, 1);
+  });
+
+  test('setSubtitleAppearance validates both values and notifies once', () {
+    final session = MarkingSession(_project(const []));
+    var notifications = 0;
+    session.addListener(() => notifications++);
+
+    session.setSubtitleAppearance(fontFamily: 'noto_serif_cjk', fontSize: 36.0);
+
+    expect(session.project.subtitleFontFamily, 'noto_serif_cjk');
+    expect(session.project.subtitleFontSize, 36.0);
+    expect(notifications, 1);
+
+    session.setSubtitleAppearance(fontFamily: 'unknown', fontSize: 100.0);
+    expect(
+      session.project.subtitleFontFamily,
+      SubtitleFontCatalog.defaultFace.id,
+    );
+    expect(session.project.subtitleFontSize, 64.0);
+    expect(notifications, 2);
+
+    session.setSubtitleAppearance(
+      fontFamily: 'noto_serif_cjk',
+      fontSize: double.nan,
+    );
+    expect(session.project.subtitleFontFamily, 'noto_serif_cjk');
+    expect(session.project.subtitleFontSize, 24.0);
+    expect(notifications, 3);
   });
 }
