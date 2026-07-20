@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Subtitle Marker
+Comment=Time subtitles and lyrics to your media
+Exec=stmarker
+Icon=subtitle-marker
+Categories=AudioVideo;AudioVideoEditing;
+Terminal=false

@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+APPDIR="$(dirname "$(readlink -f "$0")")"
+APP_HOME="$APPDIR/usr/lib/subtitle-marker"
+
+export PATH="$APPDIR/usr/bin${PATH:+:$PATH}"
+# Keep Flutter's own libraries adjacent to the runner. Do not prepend the
+# linuxdeploy directory here: mixing its relocated multimedia stack with the
+# host's GTK/libmpv stack can cause ABI crashes. Bundled FFmpeg has its own
+# $ORIGIN-based RPATH and does not need LD_LIBRARY_PATH.
+export LD_LIBRARY_PATH="$APP_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+exec "$APP_HOME/stmarker" "$@"
