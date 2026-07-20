@@ -29,6 +29,7 @@ class KaraokePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rowHeight = fontSize * 1.25;
     final currentRow = currentLineIndex.isEven ? 0 : 1;
     final nextRow = 1 - currentRow;
     final rows = <int, Widget>{
@@ -52,15 +53,15 @@ class KaraokePreview extends StatelessWidget {
     return Container(
       key: const ValueKey('karaoke-preview'),
       width: double.infinity,
-      height: 112,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
       color: Theme.of(context).colorScheme.inverseSurface,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           for (var row = 0; row < 2; row++)
             SizedBox(
-              height: 46,
+              height: rowHeight,
               width: double.infinity,
               child: rows[row] ?? const SizedBox.expand(),
             ),
@@ -81,11 +82,15 @@ class KaraokePreview extends StatelessWidget {
       child: ExcludeSemantics(
         child: RichText(
           key: key,
-          maxLines: 2,
+          maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
           text: TextSpan(
-            style: TextStyle(fontFamily: fontFamily, fontSize: fontSize),
+            style: TextStyle(
+              fontFamily: fontFamily,
+              fontSize: fontSize,
+              height: 1.15,
+            ),
             children: positionMs == null
                 ? [
                     TextSpan(

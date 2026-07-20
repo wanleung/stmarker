@@ -135,6 +135,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
         widget.controls.isPlaying &&
         stopAt == null &&
         !_reviewPlaybackOwners.containsKey(widget.controls);
+    var rebuilt = false;
     if (followingContinuousPlayback) {
       final activeIndex = findActiveReviewLine(
         session.lines,
@@ -146,12 +147,19 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
           _reviewFollowIndex = activeIndex;
           if (activeIndex != null) _reviewIndex = activeIndex;
         });
+        rebuilt = true;
       }
     } else if (_reviewFollowingPlayback) {
       setState(() {
         _reviewFollowingPlayback = false;
         _reviewFollowIndex = null;
       });
+      rebuilt = true;
+    }
+    if (!rebuilt &&
+        widget.reviewMode &&
+        session.project.karaokeMode != KaraokeMode.standard) {
+      setState(() {});
     }
   }
 
@@ -606,7 +614,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
               firstSegmentStartMs: segments.first.startMs,
               leadMs: leadMs,
             );
-      if (positionMs >= displayStart && positionMs <= segments.last.endMs) {
+      if (positionMs >= displayStart && positionMs < segments.last.endMs) {
         selected = index;
         break;
       }

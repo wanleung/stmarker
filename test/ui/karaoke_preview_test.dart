@@ -105,4 +105,75 @@ void main() {
       2000,
     );
   });
+
+  testWidgets('64px current row has derived height without overflow', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: KaraokePreview(
+            current: const [
+              KaraokeSegment(text: 'Large text', startMs: 0, endMs: 1000),
+            ],
+            currentLineIndex: 1,
+            positionMs: 500,
+            fontFamily: 'Noto Sans CJK SC',
+            fontSize: 64,
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('karaoke-row-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('karaoke-row-0')), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('karaoke-preview'))).height,
+      greaterThan(150),
+    );
+  });
+
+  testWidgets('64px two-row long text remains ordered and overflow-free', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const longText =
+        'A deliberately long karaoke line with whitespace preserved at end   ';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: KaraokePreview(
+            current: const [
+              KaraokeSegment(text: longText, startMs: 0, endMs: 1000),
+            ],
+            next: const [
+              KaraokeSegment(
+                text: 'Next large row',
+                startMs: 1000,
+                endMs: 2000,
+              ),
+            ],
+            currentLineIndex: 0,
+            positionMs: 500,
+            fontFamily: 'Noto Sans CJK SC',
+            fontSize: 64,
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    final row0 = find.byKey(const ValueKey('karaoke-row-0'));
+    final row1 = find.byKey(const ValueKey('karaoke-row-1'));
+    expect(row0, findsOneWidget);
+    expect(row1, findsOneWidget);
+    expect(tester.getTopLeft(row0).dy, lessThan(tester.getTopLeft(row1).dy));
+    expect(_spans(tester, 'karaoke-row-0').map(_text).join(), longText);
+  });
 }

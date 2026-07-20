@@ -15,6 +15,130 @@ import 'package:stmarker/ui/karaoke_preview.dart';
 import '../support/fake_playback_controls.dart';
 
 void main() {
+  testWidgets('karaoke sweep rebuilds on same-line playback ticks', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls()..seekTestPosition(1100);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeEasy,
+        lines: [
+          SubtitleLine(index: 0, text: 'abcd', startMs: 1000, endMs: 2000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    List<TextSpan> spans() =>
+        ((tester
+                        .widget<RichText>(
+                          find.byKey(const ValueKey('karaoke-row-0')),
+                        )
+                        .text
+                    as TextSpan)
+                .children!)
+            .cast<TextSpan>();
+    expect(spans().single.text, 'abcd');
+    expect(spans().single.style?.color, Colors.white);
+    controls.seekTestPosition(1600);
+    await tester.pump();
+    expect(spans().first.text, 'ab');
+    expect(spans().first.style?.color, const Color(0xFFFFD700));
+    expect(spans().last.text, 'cd');
+    expect(spans().last.style?.color, Colors.white);
+  });
+
+  testWidgets('karaoke sweep rebuilds after a direct paused seek', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls()..seekTestPosition(1200);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeEasy,
+        lines: [
+          SubtitleLine(index: 0, text: 'abcd', startMs: 1000, endMs: 2000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+    expect(controls.isPlaying, isFalse);
+    await controls.seek(1800);
+    await tester.pump();
+    final spans =
+        ((tester
+                        .widget<RichText>(
+                          find.byKey(const ValueKey('karaoke-row-0')),
+                        )
+                        .text
+                    as TextSpan)
+                .children!)
+            .cast<TextSpan>();
+    expect(spans.first.text, 'abc');
+    expect(spans.first.style?.color, const Color(0xFFFFD700));
+    expect(spans.last.text, 'd');
+  });
+
+  testWidgets('adjacent karaoke boundary immediately selects next parity row', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls()..seekTestPosition(2000);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeEasy,
+        karaokePreDisplay: KaraokePreDisplay.oneLineAhead,
+        lines: [
+          SubtitleLine(index: 0, text: 'A', startMs: 1000, endMs: 2000),
+          SubtitleLine(index: 1, text: 'B', startMs: 2000, endMs: 3000),
+          SubtitleLine(index: 2, text: 'C', startMs: 3000, endMs: 4000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    final row0 = tester.widget<RichText>(
+      find.byKey(const ValueKey('karaoke-row-0')),
+    );
+    final row1 = tester.widget<RichText>(
+      find.byKey(const ValueKey('karaoke-row-1')),
+    );
+    expect((row1.text as TextSpan).toPlainText(), 'B');
+    expect((row0.text as TextSpan).toPlainText(), 'C');
+    expect(
+      (row1.text as TextSpan).children!.cast<TextSpan>().single.style?.color,
+      Colors.white,
+    );
+  });
+
   testWidgets('timed karaoke review lead-in is white and uses project font', (
     tester,
   ) async {
