@@ -1,3 +1,6 @@
+import '../karaoke/karaoke_models.dart';
+import '../karaoke/karaoke_timing.dart';
+import '../models/project.dart';
 import '../models/subtitle_line.dart';
 import '../subtitle_fonts/subtitle_font_catalog.dart';
 import 'ass_codec.dart';
@@ -19,7 +22,28 @@ typedef AssPackageExporter =
       required AssetBytesLoader loadAsset,
     });
 
-enum AssExportResult { cancelled, exported }
+final class AssExportResult {
+  const AssExportResult._(this._status, this.invalidLineNumbers);
+
+  static const cancelled = AssExportResult._(_AssExportStatus.cancelled, []);
+  static const exported = AssExportResult._(_AssExportStatus.exported, []);
+
+  factory AssExportResult.invalidAdvanced(List<int> lineNumbers) =>
+      AssExportResult._(
+        _AssExportStatus.invalidAdvanced,
+        List.unmodifiable(lineNumbers),
+      );
+
+  final _AssExportStatus _status;
+  final List<int> invalidLineNumbers;
+
+  bool get isCancelled => _status == _AssExportStatus.cancelled;
+  bool get isExported => _status == _AssExportStatus.exported;
+  bool get hasInvalidAdvancedTiming =>
+      _status == _AssExportStatus.invalidAdvanced;
+}
+
+enum _AssExportStatus { cancelled, exported, invalidAdvanced }
 
 final class AssExportCoordinator {
   AssExportCoordinator({
@@ -36,6 +60,7 @@ final class AssExportCoordinator {
   Future<AssExportResult> export({
     required AssPathPicker choosePath,
     required List<SubtitleLine> lines,
+    Project? project,
     required SubtitleFontFace face,
     required double fontSize,
     required AssetBytesLoader loadAsset,
@@ -45,7 +70,17 @@ final class AssExportCoordinator {
     required void Function(String message) showSuccess,
   }) async {
     if (!isActive()) return AssExportResult.cancelled;
-    final warnings = exportWarnings(lines);
+    if (project?.karaokeMode == KaraokeMode.karaokeAdvanced) {
+      final invalidLineNumbers = [
+        for (final line in project!.lines)
+          if (karaokeTimingIssue(line, project.karaokeMode) != null)
+            line.index + 1,
+      ];
+      if (invalidLineNumbers.isNotEmpty) {
+        return AssExportResult.invalidAdvanced(invalidLineNumbers);
+      }
+    }
+    final warnings = exportWarnings(project?.lines ?? lines);
     if (!warnings.isEmpty) {
       if (!await confirmWarnings(
             warnings.invalidCount,
@@ -71,11 +106,17 @@ final class AssExportCoordinator {
 
     await _exportPackage(
       outputPath: outputPath,
-      content: AssCodec.encode(
-        lines,
-        fontFamily: face.familyName,
-        fontSize: fontSize,
-      ),
+      content: project == null
+          ? AssCodec.encode(
+              lines,
+              fontFamily: face.familyName,
+              fontSize: fontSize,
+            )
+          : AssCodec.encodeProject(
+              project,
+              fontFamily: face.familyName,
+              fontSize: fontSize,
+            ),
       face: face,
       loadAsset: loadAsset,
     );

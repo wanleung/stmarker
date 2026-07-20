@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
+import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/services/ass_export_coordinator.dart';
 import 'package:stmarker/services/asset_bytes_loader.dart';
@@ -241,6 +243,62 @@ void main() {
     );
     expect(success, isFalse);
   });
+
+  test(
+    'invalid Advanced timing returns exact lines and writes nothing',
+    () async {
+      for (final invalidLine in [
+        const SubtitleLine(
+          index: 4,
+          text: 'missing marks',
+          startMs: 0,
+          endMs: 1000,
+        ),
+        SubtitleLine.withKaraokeMarks(
+          index: 6,
+          text: 'stale mark',
+          startMs: 0,
+          endMs: 1000,
+          karaokeMarks: const [KaraokeMark(unitText: 'wrong', startMs: 0)],
+        ),
+        SubtitleLine.withKaraokeMarks(
+          index: 8,
+          text: 'bad marks',
+          startMs: 0,
+          endMs: 1000,
+          karaokeMarks: const [
+            KaraokeMark(unitText: 'bad', startMs: 0),
+            KaraokeMark(unitText: 'marks', startMs: 0),
+          ],
+        ),
+      ]) {
+        final events = <String>[];
+        final result = await _coordinator(events).export(
+          choosePath: ({required defaultFileName}) async {
+            events.add('pick');
+            return '/tmp/export.ass';
+          },
+          lines: [invalidLine],
+          project: Project(
+            mediaPath: '/tmp/media.mp4',
+            karaokeMode: KaraokeMode.karaokeAdvanced,
+            lines: [invalidLine],
+          ),
+          face: face,
+          fontSize: 31,
+          loadAsset: _loader,
+          isActive: () => true,
+          confirmWarnings: (_, _) async => true,
+          confirmCompanionReplacement: (_) async => true,
+          showSuccess: (_) => events.add('success'),
+        );
+
+        expect(result.hasInvalidAdvancedTiming, isTrue);
+        expect(result.invalidLineNumbers, [invalidLine.index + 1]);
+        expect(events, isEmpty);
+      }
+    },
+  );
 }
 
 Future<Uint8List> _loader(String _) async => Uint8List.fromList([1, 2, 3]);

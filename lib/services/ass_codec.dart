@@ -1,3 +1,6 @@
+import '../karaoke/karaoke_models.dart';
+import '../karaoke/karaoke_timing.dart';
+import '../models/project.dart';
 import '../models/subtitle_line.dart';
 
 class AssCodec {
@@ -45,6 +48,146 @@ class AssCodec {
     return buffer.toString();
   }
 
+  static String encodeProject(
+    Project project, {
+    required String fontFamily,
+    required double fontSize,
+  }) {
+    if (project.karaokeMode == KaraokeMode.standard) {
+      return encode(project.lines, fontFamily: fontFamily, fontSize: fontSize);
+    }
+
+    final buffer = StringBuffer()
+      ..writeln('[Script Info]')
+      ..writeln('ScriptType: v4.00+')
+      ..writeln('PlayResX: 1280')
+      ..writeln('PlayResY: 720')
+      ..writeln('WrapStyle: 0')
+      ..writeln('ScaledBorderAndShadow: yes')
+      ..writeln()
+      ..writeln('[V4+ Styles]')
+      ..writeln(
+        'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, '
+        'OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, '
+        'ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, '
+        'MarginL, MarginR, MarginV, Encoding',
+      )
+      ..writeln(
+        'Style: Default,$fontFamily,${_formatFontSize(fontSize)},&H00FFFFFF,'
+        '&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,2,0,2,'
+        '20,20,20,1',
+      )
+      ..writeln(_karaokeStyle('KaraokeTop', fontFamily, fontSize, 8))
+      ..writeln(_karaokeStyle('KaraokeBottom', fontFamily, fontSize, 2))
+      ..writeln()
+      ..writeln('[Events]')
+      ..writeln(
+        'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, '
+        'Effect, Text',
+      );
+
+    final resolved = <_ResolvedKaraokeLine>[];
+    for (final line in project.lines) {
+      final segments = resolveKaraokeSegments(line, project.karaokeMode);
+      if (segments.isEmpty) continue;
+      resolved.add(_ResolvedKaraokeLine(line, segments));
+    }
+
+    for (var index = 0; index < resolved.length; index++) {
+      final current = resolved[index];
+      final singingStartMs = current.segments.first.startMs;
+      final eventStartMs = switch (project.karaokePreDisplay) {
+        KaraokePreDisplay.seconds3 ||
+        KaraokePreDisplay.seconds4 ||
+        KaraokePreDisplay.seconds5 =>
+          (singingStartMs - project.karaokePreDisplay.leadMs!).clamp(
+            0,
+            singingStartMs,
+          ),
+        KaraokePreDisplay.off ||
+        KaraokePreDisplay.oneLineAhead => singingStartMs,
+      };
+      buffer.writeln(
+        _dialogue(
+          startMs: eventStartMs,
+          endMs: current.segments.last.endMs,
+          style: _karaokeStyleFor(current.line),
+          text: _karaokeText(current.segments, eventStartMs: eventStartMs),
+        ),
+      );
+
+      if (project.karaokePreDisplay != KaraokePreDisplay.oneLineAhead ||
+          index + 1 >= resolved.length) {
+        continue;
+      }
+      final next = resolved[index + 1];
+      final nextStartMs = next.segments.first.startMs;
+      if (singingStartMs >= nextStartMs) continue;
+      buffer.writeln(
+        _dialogue(
+          startMs: singingStartMs,
+          endMs: nextStartMs,
+          style: _karaokeStyleFor(next.line),
+          text: r'{\1c&H00FFFFFF&}' + _escapeText(next.line.text),
+        ),
+      );
+    }
+    return buffer.toString();
+  }
+
+  static String _karaokeStyle(
+    String name,
+    String fontFamily,
+    double fontSize,
+    int alignment,
+  ) =>
+      'Style: $name,$fontFamily,${_formatFontSize(fontSize)},&H0000D7FF,'
+      '&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,2,0,'
+      '$alignment,20,20,20,1';
+
+  static String _karaokeStyleFor(SubtitleLine line) =>
+      line.index.isEven ? 'KaraokeTop' : 'KaraokeBottom';
+
+  static String _dialogue({
+    required int startMs,
+    required int endMs,
+    required String style,
+    required String text,
+  }) =>
+      'Dialogue: 0,${_formatTimestamp(startMs)},${_formatTimestamp(endMs)},'
+      '$style,,0,0,0,,$text';
+
+  static String _karaokeText(
+    List<KaraokeSegment> segments, {
+    required int eventStartMs,
+  }) {
+    final buffer = StringBuffer();
+    final singingStartMs = segments.first.startMs;
+    if (eventStartMs < singingStartMs) {
+      buffer.write(
+        '{\\kf${_roundedCentiseconds(singingStartMs - eventStartMs)}}',
+      );
+    }
+
+    final totalDuration = _roundedCentiseconds(
+      segments.last.endMs - singingStartMs,
+    );
+    var assignedDuration = 0;
+    for (var index = 0; index < segments.length; index++) {
+      final segment = segments[index];
+      final duration = index == segments.length - 1
+          ? totalDuration - assignedDuration
+          : (segment.endMs - segment.startMs) ~/ 10;
+      assignedDuration += duration;
+      buffer
+        ..write('{\\kf$duration}')
+        ..write(_escapeText(segment.text));
+    }
+    return buffer.toString();
+  }
+
+  static int _roundedCentiseconds(int milliseconds) => (milliseconds + 5) ~/ 10;
+
   static String _formatFontSize(double fontSize) {
     final value = fontSize.toString();
     return value.endsWith('.0') ? value.substring(0, value.length - 2) : value;
@@ -67,4 +210,11 @@ class AssCodec {
       .replaceAll('\r\n', r'\N')
       .replaceAll('\r', r'\N')
       .replaceAll('\n', r'\N');
+}
+
+final class _ResolvedKaraokeLine {
+  const _ResolvedKaraokeLine(this.line, this.segments);
+
+  final SubtitleLine line;
+  final List<KaraokeSegment> segments;
 }
