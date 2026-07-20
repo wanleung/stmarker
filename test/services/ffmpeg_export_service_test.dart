@@ -227,6 +227,8 @@ void main() {
     service.cancel();
     await expectLater(future, throwsA(isA<FfmpegExportException>()));
     expect(process.killed, isTrue);
+    expect(process.stdoutAttached, isTrue);
+    expect(process.stderrAttached, isTrue);
     expect(await Directory(temporaryPath!).exists(), isFalse);
   });
 
@@ -265,37 +267,100 @@ void main() {
     expect(processStarts, 0);
   });
 
-  test('cancellation during process startup kills it on arrival', () async {
-    final starterEntered = Completer<void>();
-    final processArrival = Completer<FfmpegProcess>();
-    final process = _FakeProcess.pending();
-    final service = FfmpegExportService(
-      startProcess: (_, _) {
-        starterEntered.complete();
-        return processArrival.future;
-      },
-    );
+  test(
+    'a concurrent export is rejected while asset loading is blocked',
+    () async {
+      final fontLoad = Completer<Uint8List>();
+      final loaderEntered = Completer<void>();
+      final service = FfmpegExportService(
+        startProcess: (_, _) async => _FakeProcess(exitCode: 0),
+      );
+      final first = service.export(
+        inputPath: 'first.mp4',
+        outputPath: 'first-output.mp4',
+        subtitleContent: 'srt',
+        mode: SubtitleVideoMode.burnedIn,
+        durationMs: 1,
+        subtitleFont: _face,
+        subtitleFontSize: 30,
+        loadAsset: (path) {
+          if (path == _face.assetPath) {
+            loaderEntered.complete();
+            return fontLoad.future;
+          }
+          return Future.value(Uint8List(0));
+        },
+      );
+      await loaderEntered.future;
 
-    final future = service.export(
-      inputPath: 'input.mp4',
-      outputPath: 'output.mp4',
-      subtitleContent: 'srt',
-      mode: SubtitleVideoMode.embedded,
-      durationMs: 1,
-      subtitleFont: _face,
-      subtitleFontSize: 30,
-      loadAsset: (_) async => Uint8List(0),
-    );
-    await starterEntered.future;
-    service.cancel();
-    processArrival.complete(process);
+      expect(service.isRunning, isTrue);
+      await expectLater(
+        service.export(
+          inputPath: 'second.mp4',
+          outputPath: 'second-output.mp4',
+          subtitleContent: 'srt',
+          mode: SubtitleVideoMode.embedded,
+          durationMs: 1,
+          subtitleFont: _face,
+          subtitleFontSize: 30,
+          loadAsset: (_) async => Uint8List(0),
+        ),
+        throwsA(isA<FfmpegExportException>()),
+      );
 
-    await expectLater(
-      future.timeout(const Duration(seconds: 2)),
-      throwsA(isA<FfmpegExportException>()),
-    );
-    expect(process.killed, isTrue);
-  });
+      service.cancel();
+      fontLoad.complete(Uint8List(0));
+      await expectLater(first, throwsA(isA<FfmpegExportException>()));
+    },
+  );
+
+  test(
+    'delayed starter cancellation waits for process exit before cleanup',
+    () async {
+      final starterEntered = Completer<void>();
+      final processArrival = Completer<FfmpegProcess>();
+      final process = _FakeProcess.pending(completeExitOnKill: false);
+      String? temporaryPath;
+      final service = FfmpegExportService(
+        startProcess: (_, arguments) {
+          temporaryPath = _extractSubtitleDirectory(arguments);
+          starterEntered.complete();
+          return processArrival.future;
+        },
+      );
+
+      final future = service.export(
+        inputPath: 'input.mp4',
+        outputPath: 'output.mp4',
+        subtitleContent: 'srt',
+        mode: SubtitleVideoMode.embedded,
+        durationMs: 1,
+        subtitleFont: _face,
+        subtitleFontSize: 30,
+        loadAsset: (_) async => Uint8List(0),
+      );
+      await starterEntered.future;
+      expect(service.isRunning, isTrue);
+      service.cancel();
+      processArrival.complete(process);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(process.killed, isTrue);
+      expect(process.stdoutAttached, isTrue);
+      expect(process.stderrAttached, isTrue);
+      expect(service.isRunning, isTrue);
+      expect(await Directory(temporaryPath!).exists(), isTrue);
+      var completed = false;
+      future.whenComplete(() => completed = true).ignore();
+      await Future<void>.delayed(Duration.zero);
+      expect(completed, isFalse);
+
+      process.completeExit(255);
+      await expectLater(future, throwsA(isA<FfmpegExportException>()));
+      expect(service.isRunning, isFalse);
+      expect(await Directory(temporaryPath!).exists(), isFalse);
+    },
+  );
 
   test('parses FFmpeg progress timestamps', () {
     expect(
@@ -327,28 +392,49 @@ String _extractFontsDirectory(String filter) {
   return _unescape(_unescape(escaped));
 }
 
+String _extractSubtitleDirectory(List<String> arguments) {
+  final subtitlePath = arguments[arguments.lastIndexOf('-i') + 1];
+  return File(subtitlePath).parent.path;
+}
+
 final class _FakeProcess implements FfmpegProcess {
   _FakeProcess({required int exitCode})
     : _exitCodeCompleter = null,
+      completeExitOnKill = true,
       _exitCode = Future.value(exitCode);
-  _FakeProcess.pending()
+  _FakeProcess.pending({this.completeExitOnKill = true})
     : _exitCodeCompleter = Completer<int>(),
       _exitCode = null;
 
   final Future<int>? _exitCode;
   final Completer<int>? _exitCodeCompleter;
+  final bool completeExitOnKill;
   bool killed = false;
+  bool stdoutAttached = false;
+  bool stderrAttached = false;
+
+  void completeExit(int exitCode) => _exitCodeCompleter!.complete(exitCode);
 
   @override
-  Stream<List<int>> get stderr => const Stream.empty();
+  Stream<List<int>> get stderr {
+    stderrAttached = true;
+    return const Stream.empty();
+  }
+
   @override
-  Stream<List<int>> get stdout => const Stream.empty();
+  Stream<List<int>> get stdout {
+    stdoutAttached = true;
+    return const Stream.empty();
+  }
+
   @override
   Future<int> get exitCode => _exitCode ?? _exitCodeCompleter!.future;
   @override
   bool kill(ProcessSignal signal) {
     killed = true;
-    _exitCodeCompleter?.complete(255);
+    if (completeExitOnKill) {
+      _exitCodeCompleter?.complete(255);
+    }
     return true;
   }
 }

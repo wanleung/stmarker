@@ -52,9 +52,10 @@ class FfmpegExportService {
 
   final FfmpegProcessStarter _startProcess;
   FfmpegProcess? _process;
+  bool _active = false;
   bool _cancelRequested = false;
 
-  bool get isRunning => _process != null;
+  bool get isRunning => _active;
 
   Future<bool> isAvailable() async {
     try {
@@ -85,12 +86,12 @@ class FfmpegExportService {
       );
     }
 
+    _active = true;
     _cancelRequested = false;
-    final tempDirectory = await Directory.systemTemp.createTemp(
-      'stmarker_ffmpeg_',
-    );
+    Directory? tempDirectory;
     final stderrTail = <String>[];
     try {
+      tempDirectory = await Directory.systemTemp.createTemp('stmarker_ffmpeg_');
       _throwIfCancelled();
       final subtitleFile = File(
         '${tempDirectory.path}${Platform.pathSeparator}subtitles.srt',
@@ -126,12 +127,6 @@ class FfmpegExportService {
       );
       final process = await _startProcess('ffmpeg', arguments);
       _process = process;
-      if (_cancelRequested) {
-        process.kill(
-          Platform.isWindows ? ProcessSignal.sigterm : ProcessSignal.sigint,
-        );
-        _throwIfCancelled();
-      }
 
       final stderrDone = process.stderr
           .transform(utf8.decoder)
@@ -145,7 +140,13 @@ class FfmpegExportService {
             }
           })
           .asFuture<void>();
-      await process.stdout.drain<void>();
+      final stdoutDone = process.stdout.drain<void>();
+      if (_cancelRequested) {
+        process.kill(
+          Platform.isWindows ? ProcessSignal.sigterm : ProcessSignal.sigint,
+        );
+      }
+      await stdoutDone;
       final exitCode = await process.exitCode;
       await stderrDone;
 
@@ -163,7 +164,13 @@ class FfmpegExportService {
       throw FfmpegExportException('Unable to start FFmpeg: ${error.message}');
     } finally {
       _process = null;
-      await tempDirectory.delete(recursive: true);
+      try {
+        if (tempDirectory != null) {
+          await tempDirectory.delete(recursive: true);
+        }
+      } finally {
+        _active = false;
+      }
     }
   }
 
