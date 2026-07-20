@@ -360,4 +360,134 @@ void main() {
 
     expect(find.byKey(const ValueKey('review-subtitle-panel')), findsNothing);
   });
+
+  testWidgets('review panel updates with navigation and row selection', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 500, endMs: 900),
+          SubtitleLine(index: 1, text: 'second', startMs: 1200, endMs: 1800),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+    await tester.tap(find.byKey(const ValueKey('review-next')));
+    await tester.pump();
+    expect(
+      find.descendant(of: panel, matching: find.text('second')),
+      findsOneWidget,
+    );
+    final firstRow = find.byKey(const ValueKey('line-row-0'));
+    await tester.ensureVisible(firstRow);
+    await tester.pumpAndSettle();
+    await tester.tap(firstRow);
+    await tester.pump();
+    expect(
+      find.descendant(of: panel, matching: find.text('first')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('empty review hides the panel and disables playback', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(mediaPath: '/x.mp3', lines: []),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('review-subtitle-panel')), findsNothing);
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const ValueKey('review-play')))
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets(
+    'review controls clamp selection when the line list becomes shorter',
+    (tester) async {
+      final controls = FakePlaybackControls();
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          lines: [
+            SubtitleLine(index: 0, text: 'first', startMs: 100, endMs: 200),
+            SubtitleLine(index: 1, text: 'second', startMs: 300, endMs: 400),
+            SubtitleLine(index: 2, text: 'third', startMs: 500, endMs: 600),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: session,
+            child: Scaffold(
+              body: MarkingScaffold(controls: controls, reviewMode: true),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('review-next')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('review-next')));
+      await tester.pump();
+
+      session.importLines(const [
+        SubtitleLine(index: 0, text: 'remaining', startMs: 700, endMs: 800),
+      ]);
+      await tester.pump();
+
+      final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+      expect(
+        find.descendant(of: panel, matching: find.text('remaining')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('review-play')));
+      await tester.pump();
+      expect(controls.lastSeek, 700);
+
+      await tester.tap(find.byKey(const ValueKey('review-flag')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<FilterChip>(find.byKey(const ValueKey('review-flag')))
+            .selected,
+        isTrue,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('review-finish')));
+      await tester.pump();
+      expect(session.lines.single.isFullyMarked, isFalse);
+    },
+  );
 }

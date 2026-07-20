@@ -107,10 +107,22 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     }
   }
 
-  void _toggleReviewFlag() {
+  int? _safeReviewIndex(MarkingSession session) {
+    if (session.lines.isEmpty) return null;
+    return _reviewIndex.clamp(0, session.lines.length - 1);
+  }
+
+  Set<int> _validReviewFlags(MarkingSession session) => _reviewFlagged
+      .where((index) => index >= 0 && index < session.lines.length)
+      .toSet();
+
+  void _toggleReviewFlag(MarkingSession session) {
+    final reviewIndex = _safeReviewIndex(session);
+    if (reviewIndex == null) return;
     setState(() {
-      if (!_reviewFlagged.add(_reviewIndex)) {
-        _reviewFlagged.remove(_reviewIndex);
+      _reviewIndex = reviewIndex;
+      if (!_reviewFlagged.add(reviewIndex)) {
+        _reviewFlagged.remove(reviewIndex);
       }
     });
   }
@@ -118,13 +130,18 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   void _finishReview(MarkingSession session) {
     _reviewStopAtMs = null;
     unawaited(widget.controls.pause());
-    session.clearLineTimestamps(_reviewFlagged);
+    final reviewIndex = _safeReviewIndex(session);
+    session.clearLineTimestamps(
+      reviewIndex == null ? const <int>{} : _validReviewFlags(session),
+    );
     widget.onReviewFinished?.call();
   }
 
   Widget _buildReviewBar(MarkingSession session) {
     final count = session.lines.length;
-    final flagged = _reviewFlagged.contains(_reviewIndex);
+    final reviewIndex = _safeReviewIndex(session);
+    final validFlags = _validReviewFlags(session);
+    final flagged = reviewIndex != null && validFlags.contains(reviewIndex);
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Padding(
@@ -137,32 +154,34 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
             IconButton(
               key: const ValueKey('review-previous'),
               tooltip: 'Previous line',
-              onPressed: _reviewIndex > 0
-                  ? () => _selectReviewLine(session, _reviewIndex - 1)
+              onPressed: reviewIndex != null && reviewIndex > 0
+                  ? () => _selectReviewLine(session, reviewIndex - 1)
                   : null,
               icon: const Icon(Icons.skip_previous),
             ),
-            Text('Line ${_reviewIndex + 1} of $count'),
+            Text('Line ${reviewIndex == null ? 0 : reviewIndex + 1} of $count'),
             IconButton(
               key: const ValueKey('review-play'),
               tooltip: 'Play this line',
-              onPressed: count == 0
+              onPressed: reviewIndex == null
                   ? null
-                  : () => _selectReviewLine(session, _reviewIndex, play: true),
+                  : () => _selectReviewLine(session, reviewIndex, play: true),
               icon: const Icon(Icons.play_arrow),
             ),
             IconButton(
               key: const ValueKey('review-next'),
               tooltip: 'Next line',
-              onPressed: _reviewIndex + 1 < count
-                  ? () => _selectReviewLine(session, _reviewIndex + 1)
+              onPressed: reviewIndex != null && reviewIndex + 1 < count
+                  ? () => _selectReviewLine(session, reviewIndex + 1)
                   : null,
               icon: const Icon(Icons.skip_next),
             ),
             FilterChip(
               key: const ValueKey('review-flag'),
               selected: flagged,
-              onSelected: count == 0 ? null : (_) => _toggleReviewFlag(),
+              onSelected: reviewIndex == null
+                  ? null
+                  : (_) => _toggleReviewFlag(session),
               avatar: const Icon(Icons.replay, size: 18),
               label: const Text('Needs redo'),
             ),
@@ -170,9 +189,9 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
               key: const ValueKey('review-finish'),
               onPressed: () => _finishReview(session),
               child: Text(
-                _reviewFlagged.isEmpty
+                validFlags.isEmpty
                     ? 'Finish review'
-                    : 'Redo ${_reviewFlagged.length} flagged',
+                    : 'Redo ${validFlags.length} flagged',
               ),
             ),
           ],
@@ -202,9 +221,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<MarkingSession>();
-    final reviewIndex = session.lines.isEmpty
-        ? null
-        : _reviewIndex.clamp(0, session.lines.length - 1);
+    final reviewIndex = _safeReviewIndex(session);
     _keyHandler ??= MarkingKeyHandler(
       session: session,
       getPositionMs: () => widget.controls.positionMs,
