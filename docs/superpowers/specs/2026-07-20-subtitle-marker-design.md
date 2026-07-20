@@ -70,6 +70,13 @@ prompts the user to relocate it on load.
    doubles as the **review/edit table** — clicking any row jumps the
    playhead there and allows direct inline editing of that row's start/end,
    independent of the sequential pointer used for still-unmarked lines.
+5. **Review mode** becomes available when every line is fully marked. It
+   selects one row at a time and plays only that row's start-to-end interval.
+   The user can move forward or backward, select rows directly, and flag any
+   number of lines as needing another pass. Finishing review clears all
+   flagged timestamps in one operation and resumes the marking loop at the
+   first flagged line; finishing with no flags leaves every timing unchanged.
+   Normal marking shortcuts are disabled while review mode is active.
 
 ## Save / Resume
 

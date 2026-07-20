@@ -6,11 +6,18 @@ import '../../state/marking_session.dart';
 import '../format_timestamp.dart';
 
 class LineListView extends StatefulWidget {
-  const LineListView({super.key, required this.onRowTap});
+  const LineListView({
+    super.key,
+    required this.onRowTap,
+    this.selectedIndex,
+    this.flaggedIndices = const {},
+  });
 
   /// Called with the tapped row's index so the caller can jump the player
   /// there and offer that row for manual editing.
   final void Function(int index) onRowTap;
+  final int? selectedIndex;
+  final Set<int> flaggedIndices;
 
   @override
   State<LineListView> createState() => _LineListViewState();
@@ -31,7 +38,7 @@ class _LineListViewState extends State<LineListView> {
   Widget build(BuildContext context) {
     final session = context.watch<MarkingSession>();
     final lines = session.lines;
-    final currentIndex = session.currentIndex;
+    final currentIndex = widget.selectedIndex ?? session.currentIndex;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (currentIndex != null &&
@@ -53,6 +60,7 @@ class _LineListViewState extends State<LineListView> {
       itemBuilder: (context, index) {
         final line = lines[index];
         final isCurrent = index == currentIndex;
+        final isFlagged = widget.flaggedIndices.contains(index);
         final overlapsPrevious =
             index > 0 &&
             line.startMs != null &&
@@ -62,6 +70,8 @@ class _LineListViewState extends State<LineListView> {
         return Material(
           color: isCurrent
               ? Theme.of(context).colorScheme.primaryContainer
+              : isFlagged
+              ? Theme.of(context).colorScheme.tertiaryContainer
               : null,
           child: ListTile(
             key: ValueKey('line-row-$index'),
@@ -79,8 +89,16 @@ class _LineListViewState extends State<LineListView> {
                     ),
                   )
                 : null,
-            trailing: hasTimingIssue
-                ? Tooltip(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isFlagged)
+                  const Tooltip(
+                    message: 'Marked for redo',
+                    child: Icon(Icons.replay),
+                  ),
+                if (hasTimingIssue)
+                  Tooltip(
                     message: overlapsPrevious
                         ? 'Starts before the previous line ends'
                         : 'Invalid timestamp range',
@@ -88,8 +106,9 @@ class _LineListViewState extends State<LineListView> {
                       Icons.error_outline,
                       color: Theme.of(context).colorScheme.error,
                     ),
-                  )
-                : null,
+                  ),
+              ],
+            ),
             subtitle: Text(
               '${formatDisplayTimestamp(line.startMs)} → ${formatDisplayTimestamp(line.endMs)}',
             ),

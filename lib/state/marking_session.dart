@@ -78,6 +78,23 @@ class MarkingSession extends ChangeNotifier {
     );
   }
 
+  /// Clears several reviewed lines in one operation so they can be marked
+  /// again, then moves the sequential pointer to the earliest cleared line.
+  void clearLineTimestamps(Iterable<int> indices) {
+    final validIndices = indices
+        .where((index) => index >= 0 && index < _project.lines.length)
+        .toSet();
+    if (validIndices.isEmpty) return;
+
+    final updated = List<SubtitleLine>.from(_project.lines);
+    for (final index in validIndices) {
+      updated[index] = updated[index].clearTimestamps();
+    }
+    _project = _project.copyWith(lines: updated);
+    _currentIndex = _firstUnmarkedIndex(updated);
+    notifyListeners();
+  }
+
   void importLines(List<SubtitleLine> newLines) {
     _project = _project.copyWith(lines: newLines);
     _currentIndex = _firstUnmarkedIndex(_project.lines);

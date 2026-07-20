@@ -48,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   String? _projectPath;
+  bool _reviewMode = false;
 
   @override
   void initState() {
@@ -360,6 +361,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<MarkingSession>();
+    final canReview =
+        session.lines.isNotEmpty &&
+        session.lines.every((line) => line.isFullyMarked);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Subtitle Marker'),
@@ -367,16 +371,22 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: 'Paste lines',
             icon: const Icon(Icons.text_snippet),
-            onPressed: () =>
-                _runAction('Paste lines', () => _pasteLinesDialog(session)),
+            onPressed: _reviewMode
+                ? null
+                : () => _runAction(
+                    'Paste lines',
+                    () => _pasteLinesDialog(session),
+                  ),
           ),
           IconButton(
             tooltip: 'Import SRT/LRC',
             icon: const Icon(Icons.subtitles),
-            onPressed: () => _runAction(
-              'Import subtitles',
-              () => _importSubtitleFile(session),
-            ),
+            onPressed: _reviewMode
+                ? null
+                : () => _runAction(
+                    'Import subtitles',
+                    () => _importSubtitleFile(session),
+                  ),
           ),
           IconButton(
             tooltip: 'Load video/audio',
@@ -387,8 +397,9 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: 'Open project',
             icon: const Icon(Icons.file_open),
-            onPressed: () =>
-                _runAction('Open project', () => _openProject(session)),
+            onPressed: _reviewMode
+                ? null
+                : () => _runAction('Open project', () => _openProject(session)),
           ),
           IconButton(
             tooltip: 'Save project',
@@ -417,6 +428,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 _runAction('Export video', () => _exportVideo(session)),
           ),
           IconButton(
+            tooltip: _reviewMode ? 'Exit review' : 'Review marked lines',
+            icon: Icon(
+              _reviewMode ? Icons.rate_review : Icons.rate_review_outlined,
+            ),
+            onPressed: _reviewMode || canReview
+                ? () => setState(() => _reviewMode = !_reviewMode)
+                : null,
+          ),
+          IconButton(
             tooltip: 'About Subtitle Marker',
             icon: const Icon(Icons.info_outline),
             onPressed: () => showStmarkerAboutDialog(context),
@@ -425,6 +445,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: MarkingScaffold(
         controls: _player,
+        reviewMode: _reviewMode,
+        onReviewFinished: () => setState(() => _reviewMode = false),
         videoArea: Video(controller: _videoController),
       ),
     );

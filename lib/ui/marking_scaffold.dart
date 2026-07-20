@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,12 +15,20 @@ import 'widgets/player_controls_bar.dart';
 /// [PlaybackControls]. [HomeScreen] is the composition root that supplies a
 /// real media_kit-backed controller.
 class MarkingScaffold extends StatefulWidget {
-  const MarkingScaffold({super.key, required this.controls, this.videoArea});
+  const MarkingScaffold({
+    super.key,
+    required this.controls,
+    this.videoArea,
+    this.reviewMode = false,
+    this.onReviewFinished,
+  });
 
   final PlaybackControls controls;
 
   /// Optional widget (e.g. a media_kit `Video`) shown above the controls bar.
   final Widget? videoArea;
+  final bool reviewMode;
+  final VoidCallback? onReviewFinished;
 
   @override
   State<MarkingScaffold> createState() => _MarkingScaffoldState();
@@ -27,25 +37,232 @@ class MarkingScaffold extends StatefulWidget {
 class _MarkingScaffoldState extends State<MarkingScaffold> {
   final _focusNode = FocusNode();
   MarkingKeyHandler? _keyHandler;
+  int _reviewIndex = 0;
+  final Set<int> _reviewFlagged = {};
+  int? _reviewStopAtMs;
+  int _reviewOperationGeneration = 0;
+  final Map<PlaybackControls, int> _reviewPlaybackOwners = {};
+  MarkingSession? _session;
+  List<SubtitleLine>? _reviewLines;
 
   @override
   void initState() {
     super.initState();
-    widget.controls.addListener(_syncPlaybackRate);
+    widget.controls.addListener(_handleControlsChanged);
   }
 
-  void _syncPlaybackRate() {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final session = context.read<MarkingSession>();
+    if (identical(session, _session)) return;
+    _session?.removeListener(_handleSessionChanged);
+    _session = session;
+    _reviewLines = session.lines;
+    session.addListener(_handleSessionChanged);
+    _invalidateReviewOperations();
+  }
+
+  void _handleSessionChanged() {
+    final session = _session;
+    if (session == null || identical(_reviewLines, session.lines)) return;
+    _reviewLines = session.lines;
+    _invalidateReviewOperations();
+    _reviewStopAtMs = null;
+    _reviewFlagged.clear();
+    if (mounted && widget.reviewMode) setState(() {});
+  }
+
+  void _invalidateReviewOperations() {
+    _reviewOperationGeneration++;
+  }
+
+  void _handleControlsChanged() {
+    if (!mounted) return;
     final session = context.read<MarkingSession>();
     if (widget.controls.playbackRate != session.project.playbackRate) {
       session.setPlaybackRate(widget.controls.playbackRate);
+    }
+    final stopAt = _reviewStopAtMs;
+    if (widget.reviewMode &&
+        stopAt != null &&
+        widget.controls.positionMs >= stopAt) {
+      _reviewStopAtMs = null;
+      _reviewPlaybackOwners.remove(widget.controls);
+      unawaited(widget.controls.pause());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MarkingScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controls != widget.controls) {
+      _invalidateReviewOperations();
+      unawaited(oldWidget.controls.pause());
+      oldWidget.controls.removeListener(_handleControlsChanged);
+      widget.controls.addListener(_handleControlsChanged);
+      _keyHandler = null;
+    }
+    if (!oldWidget.reviewMode && widget.reviewMode) {
+      _invalidateReviewOperations();
+      _reviewIndex = 0;
+      _reviewFlagged.clear();
+      _reviewStopAtMs = null;
+      _reviewLines = _session?.lines;
+    } else if (oldWidget.reviewMode && !widget.reviewMode) {
+      _invalidateReviewOperations();
+      _reviewStopAtMs = null;
+      _reviewFlagged.clear();
+      unawaited(widget.controls.pause());
     }
   }
 
   @override
   void dispose() {
-    widget.controls.removeListener(_syncPlaybackRate);
+    _invalidateReviewOperations();
+    _session?.removeListener(_handleSessionChanged);
+    widget.controls.removeListener(_handleControlsChanged);
     _focusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _selectReviewLine(
+    MarkingSession session,
+    int index, {
+    bool play = false,
+  }) async {
+    final operation = ++_reviewOperationGeneration;
+    final controls = widget.controls;
+    final lines = session.lines;
+    if (index < 0 || index >= session.lines.length) return;
+    final line = session.lines[index];
+    if (!line.isFullyMarked) return;
+    setState(() {
+      _reviewIndex = index;
+      _reviewStopAtMs = null;
+    });
+    await controls.pause();
+    if (!_isCurrentReviewOperation(operation, controls, session, lines)) return;
+    await controls.seek(line.startMs!);
+    if (!_isCurrentReviewOperation(operation, controls, session, lines)) return;
+    if (play) {
+      _reviewStopAtMs = line.endMs;
+      _reviewPlaybackOwners[controls] = operation;
+      await controls.play();
+      if (!_isCurrentReviewOperation(operation, controls, session, lines) &&
+          _reviewPlaybackOwners[controls] == operation) {
+        _reviewPlaybackOwners.remove(controls);
+        await controls.pause();
+      }
+    }
+  }
+
+  bool _isCurrentReviewOperation(
+    int operation,
+    PlaybackControls controls,
+    MarkingSession session,
+    List<SubtitleLine> lines,
+  ) =>
+      mounted &&
+      widget.reviewMode &&
+      operation == _reviewOperationGeneration &&
+      identical(widget.controls, controls) &&
+      identical(_session, session) &&
+      identical(session.lines, lines);
+
+  int? _safeReviewIndex(MarkingSession session) {
+    if (session.lines.isEmpty) return null;
+    return _reviewIndex.clamp(0, session.lines.length - 1);
+  }
+
+  Set<int> _validReviewFlags(MarkingSession session) => _reviewFlagged
+      .where((index) => index >= 0 && index < session.lines.length)
+      .toSet();
+
+  void _toggleReviewFlag(MarkingSession session) {
+    final reviewIndex = _safeReviewIndex(session);
+    if (reviewIndex == null) return;
+    setState(() {
+      _reviewIndex = reviewIndex;
+      if (!_reviewFlagged.add(reviewIndex)) {
+        _reviewFlagged.remove(reviewIndex);
+      }
+    });
+  }
+
+  void _finishReview(MarkingSession session) {
+    _invalidateReviewOperations();
+    _reviewStopAtMs = null;
+    unawaited(widget.controls.pause());
+    final reviewIndex = _safeReviewIndex(session);
+    session.clearLineTimestamps(
+      reviewIndex == null ? const <int>{} : _validReviewFlags(session),
+    );
+    _reviewFlagged.clear();
+    widget.onReviewFinished?.call();
+  }
+
+  Widget _buildReviewBar(MarkingSession session) {
+    final count = session.lines.length;
+    final reviewIndex = _safeReviewIndex(session);
+    final validFlags = _validReviewFlags(session);
+    final flagged = reviewIndex != null && validFlags.contains(reviewIndex);
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          children: [
+            IconButton(
+              key: const ValueKey('review-previous'),
+              tooltip: 'Previous line',
+              onPressed: reviewIndex != null && reviewIndex > 0
+                  ? () => _selectReviewLine(session, reviewIndex - 1)
+                  : null,
+              icon: const Icon(Icons.skip_previous),
+            ),
+            Text('Line ${reviewIndex == null ? 0 : reviewIndex + 1} of $count'),
+            IconButton(
+              key: const ValueKey('review-play'),
+              tooltip: 'Play this line',
+              onPressed: reviewIndex == null
+                  ? null
+                  : () => _selectReviewLine(session, reviewIndex, play: true),
+              icon: const Icon(Icons.play_arrow),
+            ),
+            IconButton(
+              key: const ValueKey('review-next'),
+              tooltip: 'Next line',
+              onPressed: reviewIndex != null && reviewIndex + 1 < count
+                  ? () => _selectReviewLine(session, reviewIndex + 1)
+                  : null,
+              icon: const Icon(Icons.skip_next),
+            ),
+            FilterChip(
+              key: const ValueKey('review-flag'),
+              selected: flagged,
+              onSelected: reviewIndex == null
+                  ? null
+                  : (_) => _toggleReviewFlag(session),
+              avatar: const Icon(Icons.replay, size: 18),
+              label: const Text('Needs redo'),
+            ),
+            FilledButton(
+              key: const ValueKey('review-finish'),
+              onPressed: () => _finishReview(session),
+              child: Text(
+                validFlags.isEmpty
+                    ? 'Finish review'
+                    : 'Redo ${validFlags.length} flagged',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _editRow(
@@ -69,6 +286,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<MarkingSession>();
+    final reviewIndex = _safeReviewIndex(session);
     _keyHandler ??= MarkingKeyHandler(
       session: session,
       getPositionMs: () => widget.controls.positionMs,
@@ -78,20 +296,55 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
-      onKeyEvent: (node, event) => (_keyHandler?.handleKeyEvent(event) ?? false)
+      onKeyEvent: (node, event) =>
+          (!widget.reviewMode && (_keyHandler?.handleKeyEvent(event) ?? false))
           ? KeyEventResult.handled
           : KeyEventResult.ignored,
       child: Column(
         children: [
           if (widget.videoArea != null)
             SizedBox(height: 240, child: widget.videoArea),
+          if (widget.reviewMode && reviewIndex != null)
+            _ReviewSubtitlePanel(text: session.lines[reviewIndex].text),
           ExcludeFocus(child: PlayerControlsBar(controls: widget.controls)),
+          if (widget.reviewMode) _buildReviewBar(session),
           Expanded(
             child: LineListView(
-              onRowTap: (index) => _editRow(context, session, index),
+              selectedIndex: widget.reviewMode ? reviewIndex : null,
+              flaggedIndices: widget.reviewMode ? _reviewFlagged : const {},
+              onRowTap: widget.reviewMode
+                  ? (index) => _selectReviewLine(session, index)
+                  : (index) => _editRow(context, session, index),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReviewSubtitlePanel extends StatelessWidget {
+  const _ReviewSubtitlePanel({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('review-subtitle-panel'),
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      color: Theme.of(context).colorScheme.inverseSurface,
+      alignment: Alignment.center,
+      child: Text(
+        text,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onInverseSurface,
+        ),
       ),
     );
   }

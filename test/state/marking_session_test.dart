@@ -184,4 +184,27 @@ void main() {
       expect(session.currentIndex, 1);
     },
   );
+
+  test('clearLineTimestamps clears every flagged line in one update', () {
+    final session = MarkingSession(
+      _project(const [
+        SubtitleLine(index: 0, text: 'a', startMs: 0, endMs: 100),
+        SubtitleLine(index: 1, text: 'b', startMs: 200, endMs: 300),
+        SubtitleLine(index: 2, text: 'c', startMs: 400, endMs: 500),
+      ]),
+    );
+    var notifications = 0;
+    session.addListener(() => notifications++);
+
+    session.clearLineTimestamps({2, 0});
+
+    expect(session.lines[0], const SubtitleLine(index: 0, text: 'a'));
+    expect(
+      session.lines[1],
+      const SubtitleLine(index: 1, text: 'b', startMs: 200, endMs: 300),
+    );
+    expect(session.lines[2], const SubtitleLine(index: 2, text: 'c'));
+    expect(session.currentIndex, 0);
+    expect(notifications, 1);
+  });
 }
