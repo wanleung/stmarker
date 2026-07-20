@@ -169,6 +169,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   }) async {
     final operation = ++_reviewOperationGeneration;
     final controls = widget.controls;
+    if (controls.isPlaying) _reviewPlaybackOwners.remove(controls);
     final lines = session.lines;
     if (index < 0 || index >= session.lines.length) return;
     final line = session.lines[index];

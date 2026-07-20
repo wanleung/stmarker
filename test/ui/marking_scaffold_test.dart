@@ -296,6 +296,64 @@ void main() {
   );
 
   testWidgets(
+    'review auto-follow resumes after manual navigation cancels exact playback',
+    (tester) async {
+      final controls = FakePlaybackControls();
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          lines: [
+            SubtitleLine(index: 0, text: 'first', startMs: 100, endMs: 200),
+            SubtitleLine(index: 1, text: 'second', startMs: 300, endMs: 400),
+            SubtitleLine(index: 2, text: 'third', startMs: 500, endMs: 600),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: session,
+            child: Scaffold(
+              body: MarkingScaffold(controls: controls, reviewMode: true),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('review-next')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('review-play')));
+      await tester.pumpAndSettle();
+      expect(controls.playingValue, isTrue);
+
+      final firstRow = find.byKey(const ValueKey('line-row-0'));
+      await tester.ensureVisible(firstRow);
+      await tester.tap(firstRow);
+      await tester.pump();
+      await controls.play();
+      controls.seekTestPosition(550);
+      await tester.pump();
+
+      final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+      final thirdRowMaterial = find.ancestor(
+        of: find.byKey(const ValueKey('line-row-2')),
+        matching: find.byType(Material),
+      );
+      expect(
+        find.descendant(of: panel, matching: find.text('third')),
+        findsOneWidget,
+      );
+      expect(find.text('Line 3 of 3'), findsOneWidget);
+      expect(
+        tester.widget<Material>(thirdRowMaterial.first).color,
+        Theme.of(
+          tester.element(thirdRowMaterial.first),
+        ).colorScheme.primaryContainer,
+      );
+    },
+  );
+
+  testWidgets(
     'review auto-follow shows and highlights the active line and blanks gaps',
     (tester) async {
       final controls = FakePlaybackControls();
