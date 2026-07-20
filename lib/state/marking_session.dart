@@ -4,7 +4,8 @@ import '../models/project.dart';
 import '../models/subtitle_line.dart';
 
 class MarkingSession extends ChangeNotifier {
-  MarkingSession(this._project) : _currentIndex = _firstUnmarkedIndex(_project.lines);
+  MarkingSession(this._project)
+    : _currentIndex = _firstUnmarkedIndex(_project.lines);
 
   Project _project;
   int _currentIndex;
@@ -14,7 +15,8 @@ class MarkingSession extends ChangeNotifier {
 
   /// Index of the line space-down/space-up currently act on, or null once
   /// every line is fully marked.
-  int? get currentIndex => _currentIndex < _project.lines.length ? _currentIndex : null;
+  int? get currentIndex =>
+      _currentIndex < _project.lines.length ? _currentIndex : null;
 
   static int _firstUnmarkedIndex(List<SubtitleLine> lines) {
     for (var i = 0; i < lines.length; i++) {
@@ -70,7 +72,10 @@ class MarkingSession extends ChangeNotifier {
   /// independent of the sequential current-line pointer.
   void setLineTimestamps(int index, {int? startMs, int? endMs}) {
     final line = _project.lines[index];
-    _replaceLine(index, line.withExactTimestamps(startMs: startMs, endMs: endMs));
+    _replaceLine(
+      index,
+      line.withExactTimestamps(startMs: startMs, endMs: endMs),
+    );
   }
 
   void importLines(List<SubtitleLine> newLines) {

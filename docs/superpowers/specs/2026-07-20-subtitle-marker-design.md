@@ -10,14 +10,11 @@ file at the end.
 
 ## Platform & Stack
 
-- **Flutter**, single codebase targeting desktop (Linux, Windows, macOS) and
-  web (Flutter Web, compiled to JS/WebAssembly).
-- **Media playback**: `media_kit` (libmpv-backed) on desktop for broad
-  codec/format support beyond what a plain browser `<video>` element handles.
-  On the web build, playback falls back to the browser's native
-  `<video>`/`<audio>` element via conditional imports, since libmpv isn't
-  available there — web format support is therefore narrower than desktop,
-  but the UI and marking logic are fully shared.
+- **Flutter**, single codebase targeting desktop (Linux, Windows, macOS).
+  Flutter Web is not currently supported; browser-native media playback is a
+  possible future extension behind the existing playback abstraction.
+- **Media playback**: `media_kit` (libmpv-backed) for broad desktop
+  codec/format support.
 - **State management**: a single `MarkingSession` model exposed via a
   `ChangeNotifier` (or Provider). No backend/server — the app is fully local
   and file-based.
@@ -77,10 +74,9 @@ prompts the user to relocate it on load.
 ## Save / Resume
 
 - **Save** writes the project JSON (media path, playback rate, lines +
-  timestamps) to a user-chosen location; a recent-projects list aids
-  re-opening.
+  timestamps) to the active project location. **Save As** chooses a new path.
 - **Resume** loads the JSON, restores all lines/timestamps, and reloads the
-  media from its stored absolute path (prompting to relocate if missing).
+  media from its stored absolute path, prompting to relocate it if missing.
 
 ## Export
 
@@ -100,6 +96,11 @@ prompts the user to relocate it on load.
   original numbering in imported text.
 - Export is allowed even with some lines still unmarked — those are skipped
   or flagged, at the user's choice, rather than blocking export outright.
+- **Export Video** invokes a locally installed FFmpeg executable and offers
+  either a selectable subtitle track (stream-copying the original audio and
+  video) or burned-in subtitles (re-encoding the video). The source file is
+  never used as the output path, progress is shown, and an active export can
+  be cancelled.
 
 ## Error Handling & Edge Cases
 

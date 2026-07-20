@@ -48,7 +48,11 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     super.dispose();
   }
 
-  Future<void> _editRow(BuildContext context, MarkingSession session, int index) async {
+  Future<void> _editRow(
+    BuildContext context,
+    MarkingSession session,
+    int index,
+  ) async {
     final line = session.lines[index];
     if (line.startMs != null) widget.controls.seek(line.startMs!);
 
@@ -74,11 +78,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
-      onKeyEvent: (node, event) =>
-          (_keyHandler?.handleKeyEvent(event) ?? false) ? KeyEventResult.handled : KeyEventResult.ignored,
+      onKeyEvent: (node, event) => (_keyHandler?.handleKeyEvent(event) ?? false)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored,
       child: Column(
         children: [
-          if (widget.videoArea != null) SizedBox(height: 240, child: widget.videoArea),
+          if (widget.videoArea != null)
+            SizedBox(height: 240, child: widget.videoArea),
           ExcludeFocus(child: PlayerControlsBar(controls: widget.controls)),
           Expanded(
             child: LineListView(
@@ -108,8 +114,12 @@ class _EditRowDialog extends StatefulWidget {
 }
 
 class _EditRowDialogState extends State<_EditRowDialog> {
-  late final _startController = TextEditingController(text: widget.line.startMs?.toString() ?? '');
-  late final _endController = TextEditingController(text: widget.line.endMs?.toString() ?? '');
+  late final _startController = TextEditingController(
+    text: widget.line.startMs?.toString() ?? '',
+  );
+  late final _endController = TextEditingController(
+    text: widget.line.endMs?.toString() ?? '',
+  );
 
   @override
   void dispose() {
@@ -140,13 +150,16 @@ class _EditRowDialogState extends State<_EditRowDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         TextButton(
           key: const ValueKey('edit-save-button'),
-          onPressed: () => Navigator.pop(
-            context,
-            (int.tryParse(_startController.text), int.tryParse(_endController.text)),
-          ),
+          onPressed: () => Navigator.pop(context, (
+            int.tryParse(_startController.text),
+            int.tryParse(_endController.text),
+          )),
           child: const Text('Save'),
         ),
       ],

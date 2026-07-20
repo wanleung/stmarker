@@ -105,10 +105,10 @@ class StmarkerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'stmarker',
+      title: 'Subtitle Marker',
       home: Scaffold(
-        appBar: AppBar(title: const Text('stmarker')),
-        body: const Center(child: Text('stmarker')),
+        appBar: AppBar(title: const Text('Subtitle Marker')),
+        body: const Center(child: Text('Subtitle Marker')),
       ),
     );
   }
@@ -1962,7 +1962,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final session = context.watch<MarkingSession>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('stmarker'),
+        title: const Text('Subtitle Marker'),
         actions: [
           IconButton(
             tooltip: 'Paste lines',
@@ -2030,7 +2030,7 @@ class StmarkerApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => MarkingSession(const Project(mediaPath: '', lines: [])),
       child: MaterialApp(
-        title: 'stmarker',
+        title: 'Subtitle Marker',
         theme: ThemeData(colorSchemeSeed: Colors.indigo),
         home: const HomeScreen(),
       ),

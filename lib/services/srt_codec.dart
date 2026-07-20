@@ -13,12 +13,18 @@ class SrtCodec {
     for (var i = 0; i < marked.length; i++) {
       final line = marked[i];
       buffer.writeln(i + 1);
-      buffer.writeln('${_formatTimestamp(line.startMs!)} --> ${_formatTimestamp(line.endMs!)}');
+      buffer.writeln(
+        '${_formatTimestamp(line.startMs!)} --> ${_formatTimestamp(line.endMs!)}',
+      );
       buffer.writeln(line.text);
       if (i != marked.length - 1) buffer.writeln();
     }
     return buffer.toString();
   }
+
+  /// Lines that would produce invalid SRT time ranges.
+  static List<SubtitleLine> invalidLines(List<SubtitleLine> lines) =>
+      lines.where((line) => line.hasInvalidRange).toList(growable: false);
 
   static List<SubtitleLine> decode(String content) {
     final normalized = content.replaceAll('\r\n', '\n').trim();
@@ -33,7 +39,14 @@ class SrtCodec {
       final startMs = _msFromGroups(match, 1);
       final endMs = _msFromGroups(match, 5);
       final text = blockLines.sublist(2).join('\n');
-      result.add(SubtitleLine(index: result.length, text: text, startMs: startMs, endMs: endMs));
+      result.add(
+        SubtitleLine(
+          index: result.length,
+          text: text,
+          startMs: startMs,
+          endMs: endMs,
+        ),
+      );
     }
     return result;
   }
