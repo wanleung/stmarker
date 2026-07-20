@@ -96,7 +96,12 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       _reviewPlaybackOwners.remove(widget.controls);
       unawaited(widget.controls.pause());
     }
-    if (widget.reviewMode && widget.controls.isPlaying) {
+    final followingContinuousPlayback =
+        widget.reviewMode &&
+        widget.controls.isPlaying &&
+        stopAt == null &&
+        !_reviewPlaybackOwners.containsKey(widget.controls);
+    if (followingContinuousPlayback) {
       final activeIndex = findActiveReviewLine(
         session.lines,
         widget.controls.positionMs,
