@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +13,7 @@ import '../services/lrc_codec.dart';
 import '../services/project_store.dart';
 import '../services/srt_codec.dart';
 import '../state/marking_session.dart';
+import '../subtitle_fonts/subtitle_font_catalog.dart';
 import 'marking_scaffold.dart';
 import 'stmarker_about_dialog.dart';
 
@@ -342,6 +344,17 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitleContent: SrtCodec.encode(session.lines),
         mode: mode,
         durationMs: _player.durationMs,
+        subtitleFont: SubtitleFontCatalog.byId(
+          session.project.subtitleFontFamily,
+        ),
+        subtitleFontSize: session.project.subtitleFontSize,
+        loadAsset: (assetPath) async {
+          final data = await rootBundle.load(assetPath);
+          return data.buffer.asUint8List(
+            data.offsetInBytes,
+            data.lengthInBytes,
+          );
+        },
         onProgress: (value) => progress.value = value,
       );
       if (mounted) {

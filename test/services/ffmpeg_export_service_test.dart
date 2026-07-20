@@ -70,9 +70,78 @@ void main() {
 
     expect(
       arguments[arguments.indexOf('-vf') + 1],
-      r"subtitles=filename='C\:\\tmp\,a\'b\\subtitles.srt':fontsdir='C\:\\fonts\,a\'b':force_style='FontName=Test\: Family\, O\'Brien\\Bold\,FontSize=31.5'",
+      r"subtitles=filename=C\\\:\\\\tmp\\\,a\\\'b\\\\subtitles.srt:fontsdir=C\\\:\\\\fonts\\\,a\\\'b:force_style=FontName=Test\\\: Family\\\, O\\\'Brien\\\\Bold\\\,FontSize=31.5",
     );
   });
+
+  test(
+    'FFmpeg parses special subtitle path, fonts path, and font family',
+    () async {
+      final root = await Directory.systemTemp.createTemp('stmarker-parser-');
+      try {
+        final specialDirectory = Directory(
+          '${root.path}${Platform.pathSeparator}fonts,a\'b\\c:dir',
+        );
+        await specialDirectory.create();
+        final subtitleFile = File(
+          '${root.path}${Platform.pathSeparator}sub,a\'b\\c:s.srt',
+        );
+        await subtitleFile.writeAsString(
+          '1\n00:00:00,000 --> 00:00:00,500\nParser test\n',
+        );
+        final fontFile = File('assets/fonts/NotoSansCJKsc-Regular.otf');
+        await fontFile.copy(
+          '${specialDirectory.path}${Platform.pathSeparator}font.otf',
+        );
+
+        final arguments = FfmpegExportService.buildArguments(
+          inputPath: 'unused',
+          subtitlePath: subtitleFile.path,
+          outputPath: 'unused',
+          mode: SubtitleVideoMode.burnedIn,
+          fontsDirectory: specialDirectory.path,
+          fontFamily: r"Special: Family, O'Brien\Bold",
+          fontSize: 24,
+        );
+        final filter = arguments[arguments.indexOf('-vf') + 1];
+        final process = await Process.start('ffmpeg', [
+          '-v',
+          'debug',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=size=32x32:duration=0.1',
+          '-vf',
+          filter,
+          '-frames:v',
+          '1',
+          '-f',
+          'null',
+          '-',
+        ]);
+        final stderr = process.stderr
+            .transform(const SystemEncoding().decoder)
+            .join();
+        final stdout = process.stdout.drain<void>();
+        int exitCode;
+        try {
+          exitCode = await process.exitCode.timeout(
+            const Duration(seconds: 10),
+          );
+        } on TimeoutException {
+          process.kill(ProcessSignal.sigkill);
+          await process.exitCode;
+          fail('FFmpeg parser integration test exceeded 10 seconds.');
+        }
+        await stdout;
+        final stderrText = await stderr;
+        expect(exitCode, 0, reason: '$stderrText\nFilter: $filter');
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+    skip: !_ffmpegAvailable,
+  );
 
   test('embedded export never loads font bytes', () async {
     final process = _FakeProcess(exitCode: 0);
@@ -100,9 +169,7 @@ void main() {
       final service = FfmpegExportService(
         startProcess: (_, arguments) async {
           final filter = arguments[arguments.indexOf('-vf') + 1];
-          temporaryPath = _unescape(
-            filter.split(":fontsdir='")[1].split("'")[0],
-          );
+          temporaryPath = _extractFontsDirectory(filter);
           expect(await File('$temporaryPath/Test.otf').readAsBytes(), [1, 2]);
           expect(await File('$temporaryPath/OFL.txt').readAsBytes(), [3]);
           if (outcome == 'start failure') {
@@ -139,7 +206,7 @@ void main() {
     final service = FfmpegExportService(
       startProcess: (_, arguments) async {
         final filter = arguments[arguments.indexOf('-vf') + 1];
-        temporaryPath = _unescape(filter.split(":fontsdir='")[1].split("'")[0]);
+        temporaryPath = _extractFontsDirectory(filter);
         started.complete();
         return process;
       },
@@ -174,11 +241,24 @@ void main() {
   });
 }
 
+final bool _ffmpegAvailable = () {
+  try {
+    return Process.runSync('ffmpeg', const ['-version']).exitCode == 0;
+  } on ProcessException {
+    return false;
+  }
+}();
+
 String _unescape(String value) => value
     .replaceAll(r'\,', ',')
     .replaceAll(r"\'", "'")
     .replaceAll(r'\:', ':')
     .replaceAll(r'\\', r'\');
+
+String _extractFontsDirectory(String filter) {
+  final escaped = filter.split(':fontsdir=')[1].split(':force_style=')[0];
+  return _unescape(_unescape(escaped));
+}
 
 final class _FakeProcess implements FfmpegProcess {
   _FakeProcess({required int exitCode})

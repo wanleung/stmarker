@@ -183,9 +183,9 @@ class FfmpegExportService {
         '-i',
         inputPath,
         '-vf',
-        "subtitles=filename='${escapeFilterValue(subtitlePath)}'"
-            ":fontsdir='${escapeFilterValue(fontsDirectory)}'"
-            ":force_style='${escapeFilterValue(style)}'",
+        'subtitles=filename=${escapeFilterPath(subtitlePath)}'
+            ':fontsdir=${escapeFilterValue(fontsDirectory)}'
+            ':force_style=${escapeFilterValue(style)}',
         '-c:v',
         'libx264',
         '-preset',
@@ -229,7 +229,10 @@ class FfmpegExportService {
 
   static String escapeFilterPath(String path) => escapeFilterValue(path);
 
-  static String escapeFilterValue(String value) => value
+  static String escapeFilterValue(String value) =>
+      _escapeOnce(_escapeOnce(value));
+
+  static String _escapeOnce(String value) => value
       .replaceAll(r'\', r'\\')
       .replaceAll(':', r'\:')
       .replaceAll("'", r"\'")
