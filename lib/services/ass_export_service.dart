@@ -154,7 +154,9 @@ final class AssExportService {
       Error.throwWithStackTrace(error, stackTrace);
     }
 
-    await fileSystem.deleteDirectory(transactionPath, recursive: true);
+    await _bestEffort(
+      () => fileSystem.deleteDirectory(transactionPath, recursive: true),
+    );
   }
 
   Future<void> _rollback({

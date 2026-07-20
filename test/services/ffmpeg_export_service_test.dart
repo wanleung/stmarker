@@ -230,6 +230,73 @@ void main() {
     expect(await Directory(temporaryPath!).exists(), isFalse);
   });
 
+  test('cancellation during asset loading prevents process start', () async {
+    final fontLoad = Completer<Uint8List>();
+    final loaderEntered = Completer<void>();
+    var processStarts = 0;
+    final service = FfmpegExportService(
+      startProcess: (_, _) async {
+        processStarts++;
+        return _FakeProcess(exitCode: 0);
+      },
+    );
+
+    final future = service.export(
+      inputPath: 'input.mp4',
+      outputPath: 'output.mp4',
+      subtitleContent: 'srt',
+      mode: SubtitleVideoMode.burnedIn,
+      durationMs: 1,
+      subtitleFont: _face,
+      subtitleFontSize: 30,
+      loadAsset: (path) {
+        if (path == _face.assetPath) {
+          loaderEntered.complete();
+          return fontLoad.future;
+        }
+        return Future.value(Uint8List(0));
+      },
+    );
+    await loaderEntered.future;
+    service.cancel();
+    fontLoad.complete(Uint8List(0));
+
+    await expectLater(future, throwsA(isA<FfmpegExportException>()));
+    expect(processStarts, 0);
+  });
+
+  test('cancellation during process startup kills it on arrival', () async {
+    final starterEntered = Completer<void>();
+    final processArrival = Completer<FfmpegProcess>();
+    final process = _FakeProcess.pending();
+    final service = FfmpegExportService(
+      startProcess: (_, _) {
+        starterEntered.complete();
+        return processArrival.future;
+      },
+    );
+
+    final future = service.export(
+      inputPath: 'input.mp4',
+      outputPath: 'output.mp4',
+      subtitleContent: 'srt',
+      mode: SubtitleVideoMode.embedded,
+      durationMs: 1,
+      subtitleFont: _face,
+      subtitleFontSize: 30,
+      loadAsset: (_) async => Uint8List(0),
+    );
+    await starterEntered.future;
+    service.cancel();
+    processArrival.complete(process);
+
+    await expectLater(
+      future.timeout(const Duration(seconds: 2)),
+      throwsA(isA<FfmpegExportException>()),
+    );
+    expect(process.killed, isTrue);
+  });
+
   test('parses FFmpeg progress timestamps', () {
     expect(
       FfmpegExportService.parseProgressMs(

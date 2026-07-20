@@ -96,4 +96,14 @@ void main() {
     );
     expect(event.split(',').take(10).length, 10);
   });
+
+  test('encode converts a lone carriage return to an ASS line break', () {
+    const lines = [
+      SubtitleLine(index: 0, text: 'first\rsecond', startMs: 0, endMs: 1000),
+    ];
+
+    final output = AssCodec.encode(lines, fontFamily: 'Family', fontSize: 24);
+
+    expect(output, contains(r',,first\Nsecond'));
+  });
 }

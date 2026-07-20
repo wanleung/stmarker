@@ -91,17 +91,25 @@ class FfmpegExportService {
     );
     final stderrTail = <String>[];
     try {
+      _throwIfCancelled();
       final subtitleFile = File(
         '${tempDirectory.path}${Platform.pathSeparator}subtitles.srt',
       );
       await subtitleFile.writeAsString(subtitleContent);
+      _throwIfCancelled();
       if (mode == SubtitleVideoMode.burnedIn) {
+        final fontBytes = await loadAsset(subtitleFont.assetPath);
+        _throwIfCancelled();
         await File(
           '${tempDirectory.path}${Platform.pathSeparator}${_basename(subtitleFont.assetPath)}',
-        ).writeAsBytes(await loadAsset(subtitleFont.assetPath), flush: true);
+        ).writeAsBytes(fontBytes, flush: true);
+        _throwIfCancelled();
+        final licenceBytes = await loadAsset('assets/fonts/OFL.txt');
+        _throwIfCancelled();
         await File(
           '${tempDirectory.path}${Platform.pathSeparator}OFL.txt',
-        ).writeAsBytes(await loadAsset('assets/fonts/OFL.txt'), flush: true);
+        ).writeAsBytes(licenceBytes, flush: true);
+        _throwIfCancelled();
       }
       final arguments = buildArguments(
         inputPath: inputPath,
@@ -118,6 +126,12 @@ class FfmpegExportService {
       );
       final process = await _startProcess('ffmpeg', arguments);
       _process = process;
+      if (_cancelRequested) {
+        process.kill(
+          Platform.isWindows ? ProcessSignal.sigterm : ProcessSignal.sigint,
+        );
+        _throwIfCancelled();
+      }
 
       final stderrDone = process.stderr
           .transform(utf8.decoder)
@@ -158,6 +172,12 @@ class FfmpegExportService {
     _process?.kill(
       Platform.isWindows ? ProcessSignal.sigterm : ProcessSignal.sigint,
     );
+  }
+
+  void _throwIfCancelled() {
+    if (_cancelRequested) {
+      throw const FfmpegExportException('Video export was cancelled.');
+    }
   }
 
   static List<String> buildArguments({

@@ -18,7 +18,7 @@ void main() {
   ];
 
   test(
-    'picker cancellation uses export.ass and stops before warnings',
+    'picker receives export.ass default and cancellation stops before warnings',
     () async {
       final events = <String>[];
       final result = await _coordinator(events).export(

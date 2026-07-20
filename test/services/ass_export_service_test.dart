@@ -297,6 +297,29 @@ void main() {
       );
     },
   );
+
+  test('post-commit cleanup failure still completes the export', () async {
+    final fileSystem = _FaultFileSystem(
+      failWhen: (operation, path) =>
+          operation == 'deleteDirectory' &&
+          path
+              .split(Platform.pathSeparator)
+              .last
+              .startsWith('.ass-export-txn-'),
+    );
+
+    await AssExportService(fileSystem: fileSystem).export(
+      outputPath: outputPath,
+      content: 'new ASS',
+      face: face,
+      loadAsset: loadAsset,
+    );
+
+    expect(await File(outputPath).readAsString(), 'new ASS');
+    final companion = AssExportService.companionDirectoryFor(outputPath);
+    expect(await File('$companion/TestFont.otf').readAsBytes(), fontBytes);
+    expect(await File('$companion/OFL.txt').readAsBytes(), licenceBytes);
+  });
 }
 
 Future<void> _writeOldPackage(String outputPath) async {
