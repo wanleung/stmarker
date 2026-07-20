@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stmarker/karaoke/karaoke_models.dart';
+import 'package:stmarker/karaoke/karaoke_timing.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/state/marking_session.dart';
@@ -56,6 +57,78 @@ void main() {
       expect(session.lines[0].karaokeMarks, const [
         KaraokeMark(unitText: 'hello', startMs: 5100),
       ]);
+    });
+
+    test('state snapshots source lists and exposes unmodifiable lists', () {
+      final tokens = [const KaraokeToken(text: 'hello', identity: 'hello')];
+      final starts = [5100];
+
+      final state = AdvancedMarkingState(
+        lineIndex: 0,
+        tokens: tokens,
+        originalStartMs: 5000,
+        recordedStarts: starts,
+      );
+      tokens.add(const KaraokeToken(text: 'world', identity: 'world'));
+      starts.add(6200);
+
+      expect(state.tokens, hasLength(1));
+      expect(state.recordedStarts, [5100]);
+      expect(
+        () => state.tokens.add(
+          const KaraokeToken(text: 'world', identity: 'world'),
+        ),
+        throwsUnsupportedError,
+      );
+      expect(() => state.recordedStarts.add(6200), throwsUnsupportedError);
+    });
+
+    test('accepted presses notify once and rejected presses do not notify', () {
+      session.beginAdvancedMarking(0);
+      var notifications = 0;
+      session.addListener(() => notifications++);
+
+      expect(session.recordKaraokeUnitStart(5100), isTrue);
+      expect(notifications, 1);
+      expect(session.recordKaraokeUnitStart(5100), isFalse);
+      expect(session.recordKaraokeUnitStart(8000), isFalse);
+      expect(notifications, 1);
+      expect(session.recordKaraokeUnitStart(6200), isTrue);
+      expect(notifications, 2);
+      expect(session.recordKaraokeUnitStart(7000), isFalse);
+      expect(notifications, 2);
+    });
+
+    test('retiming, undo, restart, and completion keep pointer consistent', () {
+      final pointerSession = MarkingSession(
+        _project(const [
+          SubtitleLine(
+            index: 0,
+            text: 'hello world',
+            startMs: 5000,
+            endMs: 8000,
+          ),
+          SubtitleLine(index: 1, text: 'later'),
+        ]),
+      );
+      expect(pointerSession.currentIndex, 1);
+      pointerSession.beginAdvancedMarking(0);
+
+      pointerSession.recordKaraokeUnitStart(5100);
+      expect(pointerSession.currentIndex, 1);
+      pointerSession.recordKaraokeUnitStart(6200);
+      expect(pointerSession.currentIndex, 1);
+      pointerSession.undoKaraokeUnitStart();
+      expect(pointerSession.currentIndex, 1);
+      pointerSession.undoKaraokeUnitStart();
+      expect(pointerSession.currentIndex, 1);
+      pointerSession.recordKaraokeUnitStart(5200);
+      pointerSession.restartAdvancedMarking();
+      expect(pointerSession.currentIndex, 1);
+      pointerSession.recordKaraokeUnitStart(5300);
+      pointerSession.recordKaraokeUnitStart(6400);
+      expect(pointerSession.advancedMarking!.isComplete, isTrue);
+      expect(pointerSession.currentIndex, 1);
     });
 
     test('pre-roll clamps at media zero', () {
@@ -129,6 +202,35 @@ void main() {
 
       expect(session.advancedMarking, isNull);
       expect(session.lines[0].karaokeMarks, isEmpty);
+    });
+
+    test('changed direct text edit cancels marking and invalidates marks', () {
+      session.beginAdvancedMarking(0);
+      session.recordKaraokeUnitStart(5100);
+      var notifications = 0;
+      session.addListener(() => notifications++);
+
+      session.setLineText(0, 'goodbye world');
+
+      expect(session.advancedMarking, isNull);
+      expect(session.lines[0].text, 'goodbye world');
+      expect(session.lines[0].karaokeMarks, isEmpty);
+      expect(session.currentIndex, isNull);
+      expect(notifications, 1);
+    });
+
+    test('unchanged direct text edit cancels marking and preserves marks', () {
+      session.beginAdvancedMarking(0);
+      session.recordKaraokeUnitStart(5100);
+      var notifications = 0;
+      session.addListener(() => notifications++);
+
+      session.setLineText(0, 'hello world');
+
+      expect(session.advancedMarking, isNull);
+      expect(session.lines[0].karaokeMarks, hasLength(1));
+      expect(session.currentIndex, isNull);
+      expect(notifications, 1);
     });
 
     test('line import and project load cancel transient state', () {

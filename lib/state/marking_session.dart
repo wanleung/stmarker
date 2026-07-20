@@ -8,12 +8,13 @@ import '../subtitle_fonts/subtitle_font_catalog.dart';
 
 @immutable
 final class AdvancedMarkingState {
-  const AdvancedMarkingState({
+  AdvancedMarkingState({
     required this.lineIndex,
-    required this.tokens,
+    required List<KaraokeToken> tokens,
     required this.originalStartMs,
-    required this.recordedStarts,
-  });
+    required List<int> recordedStarts,
+  }) : tokens = List.unmodifiable(tokens),
+       recordedStarts = List.unmodifiable(recordedStarts);
 
   final int lineIndex;
   final List<KaraokeToken> tokens;
@@ -223,6 +224,14 @@ class MarkingSession extends ChangeNotifier {
       index,
       line.withExactTimestamps(startMs: startMs, endMs: endMs),
     );
+  }
+
+  /// Directly updates a reviewed line's text. Any active Advanced pass is
+  /// cancelled; [SubtitleLine.withText] decides whether stored marks remain
+  /// valid (unchanged text) or must be cleared (changed text).
+  void setLineText(int index, String text) {
+    _advancedMarking = null;
+    _replaceLine(index, _project.lines[index].withText(text));
   }
 
   /// Clears several reviewed lines in one operation so they can be marked
