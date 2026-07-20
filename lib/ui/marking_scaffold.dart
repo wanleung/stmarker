@@ -41,6 +41,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
   final Set<int> _reviewFlagged = {};
   int? _reviewStopAtMs;
   int _reviewOperationGeneration = 0;
+  final Map<PlaybackControls, int> _reviewPlaybackOwners = {};
   MarkingSession? _session;
   List<SubtitleLine>? _reviewLines;
 
@@ -87,6 +88,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
         stopAt != null &&
         widget.controls.positionMs >= stopAt) {
       _reviewStopAtMs = null;
+      _reviewPlaybackOwners.remove(widget.controls);
       unawaited(widget.controls.pause());
     }
   }
@@ -96,6 +98,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controls != widget.controls) {
       _invalidateReviewOperations();
+      unawaited(oldWidget.controls.pause());
       oldWidget.controls.removeListener(_handleControlsChanged);
       widget.controls.addListener(_handleControlsChanged);
       _keyHandler = null;
@@ -110,6 +113,7 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       _invalidateReviewOperations();
       _reviewStopAtMs = null;
       _reviewFlagged.clear();
+      unawaited(widget.controls.pause());
     }
   }
 
@@ -143,8 +147,11 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     if (!_isCurrentReviewOperation(operation, controls, session, lines)) return;
     if (play) {
       _reviewStopAtMs = line.endMs;
+      _reviewPlaybackOwners[controls] = operation;
       await controls.play();
-      if (!_isCurrentReviewOperation(operation, controls, session, lines)) {
+      if (!_isCurrentReviewOperation(operation, controls, session, lines) &&
+          _reviewPlaybackOwners[controls] == operation) {
+        _reviewPlaybackOwners.remove(controls);
         await controls.pause();
       }
     }

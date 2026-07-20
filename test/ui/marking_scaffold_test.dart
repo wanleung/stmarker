@@ -567,6 +567,78 @@ void main() {
     expect(controls.playingValue, isFalse);
   });
 
+  testWidgets('stale play completion cannot pause newer review playback', (
+    tester,
+  ) async {
+    final controls = DelayedPlaybackControls(delayPlay: true);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 100, endMs: 200),
+          SubtitleLine(index: 1, text: 'second', startMs: 300, endMs: 400),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('review-play')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('review-next')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('review-play')));
+    await tester.pump();
+
+    controls.completePlay(1);
+    await tester.pump();
+    expect(controls.playingValue, isTrue);
+
+    controls.completePlay(0);
+    await tester.pump();
+    expect(controls.playingValue, isTrue);
+  });
+
+  testWidgets('leaving review pauses an active review interval', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls();
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'first', startMs: 100, endMs: 200),
+        ],
+      ),
+    );
+
+    Widget app({required bool reviewMode}) => MaterialApp(
+      home: ChangeNotifierProvider.value(
+        value: session,
+        child: Scaffold(
+          body: MarkingScaffold(controls: controls, reviewMode: reviewMode),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(app(reviewMode: true));
+    await tester.tap(find.byKey(const ValueKey('review-play')));
+    await tester.pump();
+    expect(controls.playingValue, isTrue);
+
+    await tester.pumpWidget(app(reviewMode: false));
+    await tester.pump();
+    expect(controls.playingValue, isFalse);
+  });
+
   testWidgets('replacing lines discards review flags before finish', (
     tester,
   ) async {
@@ -604,13 +676,19 @@ void main() {
 }
 
 class DelayedPlaybackControls extends FakePlaybackControls {
-  DelayedPlaybackControls({this.delayPause = false, this.delaySeek = false});
+  DelayedPlaybackControls({
+    this.delayPause = false,
+    this.delaySeek = false,
+    this.delayPlay = false,
+  });
 
   final bool delayPause;
   final bool delaySeek;
+  final bool delayPlay;
   final List<Completer<void>> _pauses = [];
   final List<Completer<void>> _seeks = [];
   final List<int> _seekTargets = [];
+  final List<Completer<void>> _plays = [];
   int playCalls = 0;
 
   int get pendingSeekCount => _seeks.length;
@@ -645,6 +723,13 @@ class DelayedPlaybackControls extends FakePlaybackControls {
   @override
   Future<void> play() {
     playCalls++;
+    if (delayPlay) {
+      final completer = Completer<void>();
+      _plays.add(completer);
+      return completer.future.then((_) => super.play());
+    }
     return super.play();
   }
+
+  void completePlay(int index) => _plays[index].complete();
 }
