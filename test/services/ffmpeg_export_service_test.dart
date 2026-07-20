@@ -3,6 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
+import 'package:stmarker/models/project.dart';
+import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/services/ffmpeg_export_service.dart';
 import 'package:stmarker/subtitle_fonts/subtitle_font_catalog.dart';
 
@@ -12,6 +15,8 @@ const _face = SubtitleFontFace(
   familyName: r"Test: Family, O'Brien\Bold",
   assetPath: 'assets/fonts/Test.otf',
 );
+
+const _standardProject = Project(mediaPath: 'input.mp4', lines: []);
 
 void main() {
   test('embedded MP4 arguments remain unchanged', () {
@@ -159,6 +164,7 @@ void main() {
         loads++;
         return Uint8List(0);
       },
+      project: _standardProject,
     );
     expect(loads, 0);
   });
@@ -188,6 +194,7 @@ void main() {
         subtitleFontSize: 30,
         loadAsset: (path) async =>
             Uint8List.fromList(path.endsWith('OFL.txt') ? [3] : [1, 2]),
+        project: _standardProject,
       );
       if (outcome == 'success') {
         await future;
@@ -220,6 +227,7 @@ void main() {
       subtitleFont: _face,
       subtitleFontSize: 30,
       loadAsset: (_) async => Uint8List(0),
+      project: _standardProject,
     );
     await started.future;
     await Future<void>.delayed(Duration.zero);
@@ -258,6 +266,7 @@ void main() {
         }
         return Future.value(Uint8List(0));
       },
+      project: _standardProject,
     );
     await loaderEntered.future;
     service.cancel();
@@ -290,6 +299,7 @@ void main() {
           }
           return Future.value(Uint8List(0));
         },
+        project: _standardProject,
       );
       await loaderEntered.future;
 
@@ -304,6 +314,7 @@ void main() {
           subtitleFont: _face,
           subtitleFontSize: 30,
           loadAsset: (_) async => Uint8List(0),
+          project: _standardProject,
         ),
         throwsA(isA<FfmpegExportException>()),
       );
@@ -338,6 +349,7 @@ void main() {
         subtitleFont: _face,
         subtitleFontSize: 30,
         loadAsset: (_) async => Uint8List(0),
+        project: _standardProject,
       );
       await starterEntered.future;
       expect(service.isRunning, isTrue);
@@ -371,6 +383,97 @@ void main() {
     );
     expect(FfmpegExportService.parseProgressMs('no timestamp here'), isNull);
   });
+
+  for (final outcome in ['success', 'nonzero', 'cancellation']) {
+    test('karaoke ASS temporary assets are removed after $outcome', () async {
+      String? subtitlePath;
+      String? temporaryPath;
+      final process = outcome == 'cancellation'
+          ? _FakeProcess.pending()
+          : _FakeProcess(exitCode: outcome == 'success' ? 0 : 2);
+      final started = Completer<void>();
+      final service = FfmpegExportService(
+        startProcess: (_, arguments) async {
+          final filter = arguments[arguments.indexOf('-vf') + 1];
+          temporaryPath = _extractFontsDirectory(filter);
+          subtitlePath = _extractBurnedSubtitlePath(filter);
+          expect(subtitlePath, endsWith('.ass'));
+          expect(await File(subtitlePath!).readAsString(), contains(r'{\kf'));
+          expect(filter, startsWith('ass='));
+          started.complete();
+          return process;
+        },
+      );
+      final project = Project(
+        mediaPath: 'input.mp4',
+        karaokeMode: KaraokeMode.karaokeEasy,
+        lines: const [
+          SubtitleLine(index: 0, text: 'sing now', startMs: 0, endMs: 1000),
+        ],
+      );
+
+      final future = service.export(
+        inputPath: 'input.mp4',
+        outputPath: 'output.mp4',
+        subtitleContent: 'whole-line srt',
+        mode: SubtitleVideoMode.burnedIn,
+        durationMs: 1000,
+        subtitleFont: _face,
+        subtitleFontSize: 30,
+        loadAsset: (_) async => Uint8List(0),
+        project: project,
+      );
+      await started.future;
+      if (outcome == 'cancellation') service.cancel();
+      if (outcome == 'success') {
+        await future;
+      } else {
+        await expectLater(future, throwsA(isA<FfmpegExportException>()));
+      }
+      expect(await File(subtitlePath!).exists(), isFalse);
+      expect(await Directory(temporaryPath!).exists(), isFalse);
+    });
+  }
+
+  test('karaoke cancellation waits for exit before ASS cleanup', () async {
+    final process = _FakeProcess.pending(completeExitOnKill: false);
+    final started = Completer<void>();
+    String? subtitlePath;
+    final service = FfmpegExportService(
+      startProcess: (_, arguments) async {
+        final filter = arguments[arguments.indexOf('-vf') + 1];
+        subtitlePath = _extractBurnedSubtitlePath(filter);
+        started.complete();
+        return process;
+      },
+    );
+    final future = service.export(
+      inputPath: 'input.mp4',
+      outputPath: 'output.mp4',
+      subtitleContent: 'whole-line srt',
+      mode: SubtitleVideoMode.burnedIn,
+      durationMs: 1000,
+      subtitleFont: _face,
+      subtitleFontSize: 30,
+      loadAsset: (_) async => Uint8List(0),
+      project: const Project(
+        mediaPath: 'input.mp4',
+        karaokeMode: KaraokeMode.karaokeEasy,
+        lines: [SubtitleLine(index: 0, text: 'sing', startMs: 0, endMs: 1000)],
+      ),
+    );
+    await started.future;
+    service.cancel();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(process.killed, isTrue);
+    expect(await File(subtitlePath!).exists(), isTrue);
+    expect(service.isRunning, isTrue);
+
+    process.completeExit(255);
+    await expectLater(future, throwsA(isA<FfmpegExportException>()));
+    expect(await File(subtitlePath!).exists(), isFalse);
+  });
 }
 
 final bool _ffmpegAvailable = () {
@@ -389,6 +492,12 @@ String _unescape(String value) => value
 
 String _extractFontsDirectory(String filter) {
   final escaped = filter.split(':fontsdir=')[1].split(':force_style=')[0];
+  return _unescape(_unescape(escaped));
+}
+
+String _extractBurnedSubtitlePath(String filter) {
+  final prefix = filter.startsWith('ass=') ? 'ass=' : 'subtitles=filename=';
+  final escaped = filter.substring(prefix.length).split(':fontsdir=').first;
   return _unescape(_unescape(escaped));
 }
 

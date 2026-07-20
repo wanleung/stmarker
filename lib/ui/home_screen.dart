@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
 
+import '../karaoke/karaoke_models.dart';
 import '../models/subtitle_line.dart';
 import '../player/media_player_controller.dart';
 import '../services/ass_export_coordinator.dart';
+import '../services/ass_codec.dart';
 import '../services/asset_bytes_loader.dart';
 import '../services/export_integration_support.dart';
 import '../services/ffmpeg_export_service.dart';
@@ -205,12 +207,37 @@ class _HomeScreenState extends State<HomeScreen> {
     _projectPath = path;
   }
 
-  Future<bool> _confirmExportWarnings(MarkingSession session) async {
-    final warnings = exportWarnings(session.lines);
-    return _confirmExportWarningCounts(
-      warnings.invalidCount,
-      warnings.incompleteCount,
+  Future<bool> _confirmExportWarnings(
+    MarkingSession session, {
+    bool karaokeOmitted = false,
+  }) async {
+    final warnings = exportWarnings(
+      session.lines,
+      karaokeOmitted: karaokeOmitted,
     );
+    return _confirmExportWarningsValue(warnings);
+  }
+
+  Future<bool> _confirmExportWarningsValue(ExportWarnings warnings) async {
+    if (warnings.isEmpty) return true;
+    final exportAnyway = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Export warnings'),
+        content: Text(warnings.message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Export anyway'),
+          ),
+        ],
+      ),
+    );
+    return exportAnyway == true;
   }
 
   Future<bool> _confirmExportWarningCounts(
@@ -218,35 +245,23 @@ class _HomeScreenState extends State<HomeScreen> {
     int incompleteCount,
   ) async {
     if (invalidCount > 0 || incompleteCount > 0) {
-      final exportAnyway = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Export warnings'),
-          content: Text(
-            ExportWarnings(
-              invalidCount: invalidCount,
-              incompleteCount: incompleteCount,
-            ).message,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Export anyway'),
-            ),
-          ],
+      return _confirmExportWarningsValue(
+        ExportWarnings(
+          invalidCount: invalidCount,
+          incompleteCount: incompleteCount,
         ),
       );
-      return exportAnyway == true;
     }
     return true;
   }
 
   Future<void> _exportSrt(MarkingSession session) async {
-    if (!await _confirmExportWarnings(session)) return;
+    if (!await _confirmExportWarnings(
+      session,
+      karaokeOmitted: session.project.karaokeMode != KaraokeMode.standard,
+    )) {
+      return;
+    }
 
     final path = await FilePicker.saveFile(
       dialogTitle: 'Export SRT',
@@ -263,6 +278,7 @@ class _HomeScreenState extends State<HomeScreen> {
         fileName: defaultFileName,
       ),
       lines: session.lines,
+      project: session.project,
       face: SubtitleFontCatalog.byId(session.project.subtitleFontFamily),
       fontSize: session.project.subtitleFontSize,
       loadAsset: _loadAsset,
@@ -305,13 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!await File(session.project.mediaPath).exists()) {
       throw const FfmpegExportException('The source video could not be found.');
     }
-    if (!await _ffmpeg.isAvailable()) {
-      throw const FfmpegExportException(
-        'FFmpeg is not installed or is not available on PATH.',
-      );
-    }
-    if (!await _confirmExportWarnings(session) || !mounted) return;
-
+    if (!mounted) return;
     final mode = await showDialog<SubtitleVideoMode>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
@@ -339,6 +349,26 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (mode == null) return;
+
+    final settings = buildVideoExportSettings(session.project, _loadAsset);
+    if (mode == SubtitleVideoMode.burnedIn &&
+        settings.invalidKaraokeLineNumbers.isNotEmpty) {
+      throw AssKaraokeValidationException(settings.invalidKaraokeLineNumbers);
+    }
+    if (!await _confirmExportWarnings(
+          session,
+          karaokeOmitted:
+              mode == SubtitleVideoMode.embedded &&
+              session.project.karaokeMode != KaraokeMode.standard,
+        ) ||
+        !mounted) {
+      return;
+    }
+    if (!await _ffmpeg.isAvailable()) {
+      throw const FfmpegExportException(
+        'FFmpeg is not installed or is not available on PATH.',
+      );
+    }
 
     final sourceName = session.project.mediaPath
         .split(Platform.pathSeparator)
@@ -391,7 +421,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ).whenComplete(() => dialogOpen = false);
 
     try {
-      final settings = buildVideoExportSettings(session.project, _loadAsset);
       await _ffmpeg.export(
         inputPath: session.project.mediaPath,
         outputPath: outputPath,
@@ -401,6 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitleFont: settings.subtitleFont,
         subtitleFontSize: settings.subtitleFontSize,
         loadAsset: settings.loadAsset,
+        project: settings.project,
         onProgress: (value) => progress.value = value,
       );
       if (mounted) {

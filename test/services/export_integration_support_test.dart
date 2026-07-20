@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/services/export_integration_support.dart';
@@ -16,6 +17,60 @@ void main() {
       warning.message,
       '1 line(s) have invalid ranges. 1 incomplete line(s) will be skipped. Export anyway?',
     );
+  });
+
+  test('Standard export warning wording remains unchanged', () {
+    final warning = exportWarnings(const [
+      SubtitleLine(index: 0, text: 'Missing'),
+    ]);
+
+    expect(warning.karaokeOmitted, isFalse);
+    expect(warning.invalidKaraokeLineNumbers, isEmpty);
+    expect(
+      warning.message,
+      '1 incomplete line(s) will be skipped. Export anyway?',
+    );
+  });
+
+  test('karaoke omission warning is included exactly once', () {
+    final warning = exportWarnings(const [
+      SubtitleLine(index: 0, text: 'Ready', startMs: 0, endMs: 1000),
+    ], karaokeOmitted: true);
+
+    expect(warning.karaokeOmitted, isTrue);
+    expect(
+      'Karaoke animation and pre-display will be omitted.'.allMatches(
+        warning.message,
+      ),
+      hasLength(1),
+    );
+    expect(
+      warning.message,
+      'Karaoke animation and pre-display will be omitted. Export anyway?',
+    );
+  });
+
+  test('video settings carry project and affected Advanced line numbers', () {
+    final project = Project(
+      mediaPath: '/tmp/video.mp4',
+      karaokeMode: KaraokeMode.karaokeAdvanced,
+      lines: const [
+        SubtitleLine(index: 2, text: 'missing marks', startMs: 0, endMs: 1000),
+      ],
+    );
+    final settings = buildVideoExportSettings(
+      project,
+      bundleAssetLoader(_SlicedBundle()),
+    );
+
+    expect(settings.project, same(project));
+    expect(settings.invalidKaraokeLineNumbers, [3]);
+
+    final warning = exportWarnings(
+      project.lines,
+      invalidKaraokeLineNumbers: settings.invalidKaraokeLineNumbers,
+    );
+    expect(warning.invalidKaraokeLineNumbers, [3]);
   });
 
   test('bundle loader preserves the exact ByteData slice', () async {

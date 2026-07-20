@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../karaoke/karaoke_models.dart';
+import '../models/project.dart';
 import '../subtitle_fonts/subtitle_font_catalog.dart';
+import 'ass_codec.dart';
 import 'asset_bytes_loader.dart';
 
 enum SubtitleVideoMode { embedded, burnedIn }
@@ -75,6 +78,7 @@ class FfmpegExportService {
     required SubtitleFontFace subtitleFont,
     required double subtitleFontSize,
     required AssetBytesLoader loadAsset,
+    required Project project,
     void Function(double progress)? onProgress,
   }) async {
     if (isRunning) {
@@ -93,10 +97,22 @@ class FfmpegExportService {
     try {
       tempDirectory = await Directory.systemTemp.createTemp('stmarker_ffmpeg_');
       _throwIfCancelled();
+      final karaokeBurnedIn =
+          mode == SubtitleVideoMode.burnedIn &&
+          project.karaokeMode != KaraokeMode.standard;
       final subtitleFile = File(
-        '${tempDirectory.path}${Platform.pathSeparator}subtitles.srt',
+        '${tempDirectory.path}${Platform.pathSeparator}'
+        'subtitles.${karaokeBurnedIn ? 'ass' : 'srt'}',
       );
-      await subtitleFile.writeAsString(subtitleContent);
+      await subtitleFile.writeAsString(
+        karaokeBurnedIn
+            ? AssCodec.encodeProject(
+                project,
+                fontFamily: subtitleFont.familyName,
+                fontSize: subtitleFontSize,
+              )
+            : subtitleContent,
+      );
       _throwIfCancelled();
       if (mode == SubtitleVideoMode.burnedIn) {
         final fontBytes = await loadAsset(subtitleFont.assetPath);
@@ -124,6 +140,7 @@ class FfmpegExportService {
             ? subtitleFont.familyName
             : null,
         fontSize: mode == SubtitleVideoMode.burnedIn ? subtitleFontSize : null,
+        assSubtitles: karaokeBurnedIn,
       );
       final process = await _startProcess('ffmpeg', arguments);
       _process = process;
@@ -195,6 +212,7 @@ class FfmpegExportService {
     String? fontsDirectory,
     String? fontFamily,
     double? fontSize,
+    bool assSubtitles = false,
   }) {
     if (mode == SubtitleVideoMode.burnedIn) {
       if (fontsDirectory == null || fontFamily == null || fontSize == null) {
@@ -204,15 +222,19 @@ class FfmpegExportService {
       }
       final style =
           'FontName=$fontFamily,FontSize=${_formatFontSize(fontSize)}';
+      final filter = assSubtitles
+          ? 'ass=${escapeFilterPath(subtitlePath)}'
+                ':fontsdir=${escapeFilterValue(fontsDirectory)}'
+          : 'subtitles=filename=${escapeFilterPath(subtitlePath)}'
+                ':fontsdir=${escapeFilterValue(fontsDirectory)}'
+                ':force_style=${escapeFilterValue(style)}';
       return [
         '-hide_banner',
         '-y',
         '-i',
         inputPath,
         '-vf',
-        'subtitles=filename=${escapeFilterPath(subtitlePath)}'
-            ':fontsdir=${escapeFilterValue(fontsDirectory)}'
-            ':force_style=${escapeFilterValue(style)}',
+        filter,
         '-c:v',
         'libx264',
         '-preset',
