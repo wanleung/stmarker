@@ -1,13 +1,13 @@
 import '../karaoke/karaoke_models.dart';
 
 class SubtitleLine {
-  const SubtitleLine({
+  SubtitleLine({
     required this.index,
     required this.text,
     this.startMs,
     this.endMs,
-    this.karaokeMarks = const [],
-  });
+    List<KaraokeMark> karaokeMarks = const [],
+  }) : karaokeMarks = List.unmodifiable(karaokeMarks);
 
   final int index;
   final String text;
@@ -56,6 +56,16 @@ class SubtitleLine {
     return SubtitleLine(index: index, text: text);
   }
 
+  SubtitleLine withText(String text) {
+    return SubtitleLine(
+      index: index,
+      text: text,
+      startMs: startMs,
+      endMs: endMs,
+      karaokeMarks: text == this.text ? karaokeMarks : const [],
+    );
+  }
+
   SubtitleLine withAdvancedKaraoke({
     required int startMs,
     required List<KaraokeMark> marks,
@@ -83,10 +93,10 @@ class SubtitleLine {
     if (rawMarks is List) {
       for (final rawMark in rawMarks) {
         if (rawMark is! Map) continue;
-        try {
-          marks.add(KaraokeMark.fromJson(Map<String, dynamic>.from(rawMark)));
-        } on Object {
-          // A malformed optional mark does not prevent the line from loading.
+        final unitText = rawMark['unitText'];
+        final startMs = rawMark['startMs'];
+        if (unitText is String && startMs is int) {
+          marks.add(KaraokeMark(unitText: unitText, startMs: startMs));
         }
       }
     }

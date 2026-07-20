@@ -22,7 +22,7 @@ void main() {
       mediaPath: '/tmp/song.mp4',
       karaokeMode: KaraokeMode.karaokeAdvanced,
       karaokePreDisplay: KaraokePreDisplay.oneLineAhead,
-      lines: const [
+      lines: [
         SubtitleLine(
           index: 0,
           text: 'hello world',
@@ -105,7 +105,7 @@ void main() {
   });
 
   test('toJson/fromJson round-trip', () {
-    const project = Project(
+    final project = Project(
       mediaPath: '/tmp/song.mp3',
       playbackRate: 0.75,
       subtitleFontFamily: 'noto_serif_cjk',
