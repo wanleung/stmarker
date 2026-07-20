@@ -197,8 +197,11 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
       _reviewStopAtMs = line.endMs;
       _reviewPlaybackOwners[controls] = operation;
       await controls.play();
-      if (!_isCurrentReviewOperation(operation, controls, session, lines) &&
-          _reviewPlaybackOwners[controls] == operation) {
+      if (_isCurrentReviewOperation(operation, controls, session, lines)) {
+        if (_reviewPlaybackOwners[controls] == operation) {
+          _reviewPlaybackOwners.remove(controls);
+        }
+      } else if (_reviewPlaybackOwners[controls] == operation) {
         _reviewPlaybackOwners.remove(controls);
         await controls.pause();
       }
