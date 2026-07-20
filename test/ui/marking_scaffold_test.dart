@@ -10,10 +10,88 @@ import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/state/marking_session.dart';
 import 'package:stmarker/subtitle_fonts/subtitle_font_catalog.dart';
 import 'package:stmarker/ui/marking_scaffold.dart';
+import 'package:stmarker/ui/karaoke_preview.dart';
 
 import '../support/fake_playback_controls.dart';
 
 void main() {
+  testWidgets('timed karaoke review lead-in is white and uses project font', (
+    tester,
+  ) async {
+    final controls = FakePlaybackControls()..seekTestPosition(0);
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeEasy,
+        karaokePreDisplay: KaraokePreDisplay.seconds3,
+        subtitleFontFamily: 'noto_serif_cjk',
+        subtitleFontSize: 36,
+        lines: [
+          SubtitleLine(index: 0, text: 'lead in', startMs: 2000, endMs: 4000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(controls: controls, reviewMode: true),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(KaraokePreview), findsOneWidget);
+    expect(find.byKey(const ValueKey('review-subtitle-panel')), findsNothing);
+    final text = tester.widget<RichText>(
+      find.byKey(const ValueKey('karaoke-row-0')),
+    );
+    final root = text.text as TextSpan;
+    expect(root.style?.fontFamily, 'Noto Serif CJK SC');
+    expect(root.style?.fontSize, 36);
+    expect(
+      root.children!.cast<TextSpan>().every(
+        (span) => span.style?.color == Colors.white,
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('invalid Advanced timing does not attempt a resolved preview', (
+    tester,
+  ) async {
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine(
+            index: 0,
+            text: 'not marked',
+            startMs: 1000,
+            endMs: 2000,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: MarkingScaffold(
+              controls: FakePlaybackControls(),
+              reviewMode: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(KaraokePreview), findsNothing);
+    expect(find.text('Needs word timing'), findsOneWidget);
+  });
+
   testWidgets(
     'Advanced completed line starts, marks, restarts and cancels a pass',
     (tester) async {

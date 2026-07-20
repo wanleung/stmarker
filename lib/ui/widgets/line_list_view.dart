@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/marking_session.dart';
+import '../../karaoke/karaoke_models.dart';
+import '../../karaoke/karaoke_timing.dart';
+import '../../models/subtitle_line.dart';
 import '../format_timestamp.dart';
 
 class LineListView extends StatefulWidget {
@@ -67,6 +70,7 @@ class _LineListViewState extends State<LineListView> {
             lines[index - 1].endMs != null &&
             line.startMs! < lines[index - 1].endMs!;
         final hasTimingIssue = line.hasInvalidRange || overlapsPrevious;
+        final karaokeStatus = _karaokeStatus(line, session.project.karaokeMode);
         return Material(
           color: isCurrent
               ? Theme.of(context).colorScheme.primaryContainer
@@ -107,6 +111,10 @@ class _LineListViewState extends State<LineListView> {
                       color: Theme.of(context).colorScheme.error,
                     ),
                   ),
+                if (karaokeStatus != null) ...[
+                  const SizedBox(width: 8),
+                  Text(karaokeStatus, key: ValueKey('karaoke-status-$index')),
+                ],
               ],
             ),
             subtitle: Text(
@@ -117,4 +125,25 @@ class _LineListViewState extends State<LineListView> {
       },
     );
   }
+}
+
+String? _karaokeStatus(SubtitleLine line, KaraokeMode mode) {
+  if (mode == KaraokeMode.standard) return null;
+  final issue = karaokeTimingIssue(line, mode);
+  if (issue == null) return 'Karaoke ready';
+  if (mode == KaraokeMode.karaokeAdvanced &&
+      issue == KaraokeTimingIssue.missingMarks) {
+    final tokens = tokenizeKaraokeText(line.text);
+    final total = tokens.length;
+    if (line.karaokeMarks.isEmpty) return 'Needs word timing';
+    final recorded = line.karaokeMarks.length;
+    final prefixIsValid =
+        recorded < total &&
+        List.generate(recorded, (index) => index).every(
+          (index) =>
+              line.karaokeMarks[index].unitText == tokens[index].identity,
+        );
+    if (prefixIsValid) return 'Word timing $recorded/$total';
+  }
+  return 'Invalid karaoke timing';
 }

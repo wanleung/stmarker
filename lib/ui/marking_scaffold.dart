@@ -5,11 +5,13 @@ import 'package:provider/provider.dart';
 
 import '../keyboard/marking_key_handler.dart';
 import '../karaoke/karaoke_models.dart';
+import '../karaoke/karaoke_timing.dart';
 import '../subtitle_fonts/subtitle_font_catalog.dart';
 import '../player/playback_controls.dart';
 import '../state/marking_session.dart';
 import '../models/subtitle_line.dart';
 import 'review_active_line.dart';
+import 'karaoke_preview.dart';
 import 'karaoke_settings_dialog.dart';
 import 'subtitle_appearance_dialog.dart';
 import 'widgets/line_list_view.dart';
@@ -507,6 +509,9 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     final reviewText = displayReviewIndex == null
         ? ''
         : session.lines[displayReviewIndex].text;
+    final karaokePreview = widget.reviewMode
+        ? _karaokePreviewFor(session, widget.controls.positionMs)
+        : null;
     _keyHandler ??= MarkingKeyHandler(
       session: session,
       getPositionMs: () => widget.controls.positionMs,
@@ -525,7 +530,11 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
         children: [
           if (widget.videoArea != null)
             SizedBox(height: 240, child: widget.videoArea),
-          if (widget.reviewMode && manualReviewIndex != null)
+          if (karaokePreview != null)
+            karaokePreview
+          else if (widget.reviewMode &&
+              manualReviewIndex != null &&
+              session.project.karaokeMode == KaraokeMode.standard)
             _ReviewSubtitlePanel(
               text: reviewText,
               fontFamily: SubtitleFontCatalog.byId(
@@ -572,6 +581,53 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget? _karaokePreviewFor(MarkingSession session, int positionMs) {
+    final project = session.project;
+    final mode = project.karaokeMode;
+    if (mode == KaraokeMode.standard) return null;
+
+    final resolved = <(int, List<KaraokeSegment>)>[];
+    for (var index = 0; index < session.lines.length; index++) {
+      final segments = resolveKaraokeSegments(session.lines[index], mode);
+      if (segments.isNotEmpty) resolved.add((index, segments));
+    }
+    if (resolved.isEmpty) return null;
+
+    final leadMs = project.karaokePreDisplay.leadMs;
+    var selected = -1;
+    for (var index = 0; index < resolved.length; index++) {
+      final segments = resolved[index].$2;
+      final displayStart = leadMs == null
+          ? segments.first.startMs
+          : karaokeDisplayStartMs(
+              firstSegmentStartMs: segments.first.startMs,
+              leadMs: leadMs,
+            );
+      if (positionMs >= displayStart && positionMs <= segments.last.endMs) {
+        selected = index;
+        break;
+      }
+    }
+    if (selected < 0) return null;
+
+    final current = resolved[selected];
+    final showNext =
+        project.karaokePreDisplay == KaraokePreDisplay.oneLineAhead;
+    final next = showNext && selected + 1 < resolved.length
+        ? resolved[selected + 1].$2
+        : null;
+    return KaraokePreview(
+      current: current.$2,
+      next: next,
+      currentLineIndex: current.$1,
+      positionMs: positionMs,
+      fontFamily: SubtitleFontCatalog.byId(
+        project.subtitleFontFamily,
+      ).familyName,
+      fontSize: project.subtitleFontSize,
     );
   }
 }

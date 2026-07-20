@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:stmarker/models/project.dart';
+import 'package:stmarker/karaoke/karaoke_models.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/state/marking_session.dart';
 import 'package:stmarker/ui/widgets/line_list_view.dart';
@@ -140,5 +141,74 @@ void main() {
       findsOneWidget,
     );
     expect(find.byTooltip('Invalid timestamp range'), findsOneWidget);
+  });
+
+  testWidgets('shows karaoke readiness and Advanced word timing states', (
+    tester,
+  ) async {
+    final session = MarkingSession(
+      Project(
+        mediaPath: '/x.mp3',
+        karaokeMode: KaraokeMode.karaokeAdvanced,
+        lines: [
+          SubtitleLine.withKaraokeMarks(
+            index: 0,
+            text: 'one two',
+            startMs: 1000,
+            endMs: 3000,
+            karaokeMarks: const [
+              KaraokeMark(unitText: 'one', startMs: 1000),
+              KaraokeMark(unitText: 'two', startMs: 2000),
+            ],
+          ),
+          SubtitleLine.withKaraokeMarks(
+            index: 1,
+            text: 'a b c d',
+            startMs: 4000,
+            endMs: 8000,
+            karaokeMarks: const [
+              KaraokeMark(unitText: 'a', startMs: 4000),
+              KaraokeMark(unitText: 'b', startMs: 5000),
+            ],
+          ),
+          const SubtitleLine(
+            index: 2,
+            text: 'needs timing',
+            startMs: 9000,
+            endMs: 11000,
+          ),
+          SubtitleLine.withKaraokeMarks(
+            index: 3,
+            text: 'bad marks',
+            startMs: 12000,
+            endMs: 14000,
+            karaokeMarks: const [
+              KaraokeMark(unitText: 'stale', startMs: 12000),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(_wrap(session, (_) {}));
+
+    expect(find.text('Karaoke ready'), findsOneWidget);
+    expect(find.text('Word timing 2/4'), findsOneWidget);
+    expect(find.text('Needs word timing'), findsOneWidget);
+    expect(find.text('Invalid karaoke timing'), findsOneWidget);
+  });
+
+  testWidgets('Standard mode renders no karaoke status', (tester) async {
+    final session = MarkingSession(
+      const Project(
+        mediaPath: '/x.mp3',
+        lines: [
+          SubtitleLine(index: 0, text: 'plain', startMs: 1000, endMs: 2000),
+        ],
+      ),
+    );
+    await tester.pumpWidget(_wrap(session, (_) {}));
+    expect(find.text('Karaoke ready'), findsNothing);
+    expect(find.textContaining('timing'), findsNothing);
   });
 }
