@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../keyboard/marking_key_handler.dart';
+import '../subtitle_fonts/subtitle_font_catalog.dart';
 import '../player/playback_controls.dart';
 import '../state/marking_session.dart';
 import '../models/subtitle_line.dart';
 import 'review_active_line.dart';
+import 'subtitle_appearance_dialog.dart';
 import 'widgets/line_list_view.dart';
 import 'widgets/player_controls_bar.dart';
 
@@ -255,6 +257,25 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
     widget.onReviewFinished?.call();
   }
 
+  Future<void> _editSubtitleAppearance(MarkingSession session) async {
+    final reviewIndex = _safeReviewIndex(session);
+    final result = await showSubtitleAppearanceDialog(
+      context,
+      initial: SubtitleAppearance(
+        fontFamily: session.project.subtitleFontFamily,
+        fontSize: session.project.subtitleFontSize,
+      ),
+      previewText: reviewIndex == null
+          ? 'Subtitle preview 字幕 미리보기'
+          : session.lines[reviewIndex].text,
+    );
+    if (result == null || !mounted) return;
+    session.setSubtitleAppearance(
+      fontFamily: result.fontFamily,
+      fontSize: result.fontSize,
+    );
+  }
+
   Widget _buildReviewBar(MarkingSession session) {
     final count = session.lines.length;
     final reviewIndex = _safeReviewIndex(session);
@@ -302,6 +323,12 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
                   : (_) => _toggleReviewFlag(session),
               avatar: const Icon(Icons.replay, size: 18),
               label: const Text('Needs redo'),
+            ),
+            IconButton(
+              key: const ValueKey('review-appearance'),
+              tooltip: 'Subtitle appearance',
+              onPressed: () => _editSubtitleAppearance(session),
+              icon: const Icon(Icons.format_size),
             ),
             FilledButton(
               key: const ValueKey('review-finish'),
@@ -364,7 +391,13 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
           if (widget.videoArea != null)
             SizedBox(height: 240, child: widget.videoArea),
           if (widget.reviewMode && manualReviewIndex != null)
-            _ReviewSubtitlePanel(text: reviewText),
+            _ReviewSubtitlePanel(
+              text: reviewText,
+              fontFamily: SubtitleFontCatalog.byId(
+                session.project.subtitleFontFamily,
+              ).familyName,
+              fontSize: session.project.subtitleFontSize,
+            ),
           ExcludeFocus(child: PlayerControlsBar(controls: widget.controls)),
           if (widget.reviewMode) _buildReviewBar(session),
           Expanded(
@@ -383,9 +416,15 @@ class _MarkingScaffoldState extends State<MarkingScaffold> {
 }
 
 class _ReviewSubtitlePanel extends StatelessWidget {
-  const _ReviewSubtitlePanel({required this.text});
+  const _ReviewSubtitlePanel({
+    required this.text,
+    required this.fontFamily,
+    required this.fontSize,
+  });
 
   final String text;
+  final String fontFamily;
+  final double fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -403,6 +442,8 @@ class _ReviewSubtitlePanel extends StatelessWidget {
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
           color: Theme.of(context).colorScheme.onInverseSurface,
+          fontFamily: fontFamily,
+          fontSize: fontSize,
         ),
       ),
     );

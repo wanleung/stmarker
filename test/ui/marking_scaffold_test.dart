@@ -7,11 +7,87 @@ import 'package:provider/provider.dart';
 import 'package:stmarker/models/project.dart';
 import 'package:stmarker/models/subtitle_line.dart';
 import 'package:stmarker/state/marking_session.dart';
+import 'package:stmarker/subtitle_fonts/subtitle_font_catalog.dart';
 import 'package:stmarker/ui/marking_scaffold.dart';
 
 import '../support/fake_playback_controls.dart';
 
 void main() {
+  testWidgets(
+    'review appearance saves once and styles text without changing a blank gap',
+    (tester) async {
+      final controls = FakePlaybackControls();
+      final session = MarkingSession(
+        const Project(
+          mediaPath: '/x.mp3',
+          lines: [
+            SubtitleLine(
+              index: 0,
+              text: 'styled line',
+              startMs: 100,
+              endMs: 200,
+            ),
+            SubtitleLine(index: 1, text: 'later', startMs: 300, endMs: 400),
+          ],
+        ),
+      );
+      var notifications = 0;
+      session.addListener(() => notifications++);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider.value(
+            value: session,
+            child: Scaffold(
+              body: MarkingScaffold(controls: controls, reviewMode: true),
+            ),
+          ),
+        ),
+      );
+
+      await controls.play();
+      controls.seekTestPosition(250);
+      await tester.pump();
+      final panel = find.byKey(const ValueKey('review-subtitle-panel'));
+      expect(
+        find.descendant(of: panel, matching: find.text('styled line')),
+        findsNothing,
+      );
+      expect(find.text('Line 1 of 2'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('review-appearance')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('subtitle-appearance-font')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Serif').last);
+      await tester.pumpAndSettle();
+      tester
+          .widget<Slider>(
+            find.byKey(const ValueKey('subtitle-appearance-size')),
+          )
+          .onChanged!(42);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('subtitle-appearance-save')));
+      await tester.pumpAndSettle();
+
+      expect(notifications, 1);
+      expect(session.project.subtitleFontFamily, 'noto_serif_cjk');
+      expect(session.project.subtitleFontSize, 42);
+      final panelText = tester.widget<Text>(
+        find.descendant(of: panel, matching: find.byType(Text)),
+      );
+      expect(panelText.data, '');
+      expect(
+        panelText.style?.fontFamily,
+        SubtitleFontCatalog.byId('noto_serif_cjk').familyName,
+      );
+      expect(panelText.style?.fontSize, 42);
+      expect(find.text('Line 1 of 2'), findsOneWidget);
+      expect(controls.positionMs, 250);
+      expect(controls.playingValue, isTrue);
+    },
+  );
+
   testWidgets(
     'space down/up marks the current line using the live fake position',
     (tester) async {
