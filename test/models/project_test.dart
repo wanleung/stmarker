@@ -23,7 +23,7 @@ void main() {
       karaokeMode: KaraokeMode.karaokeAdvanced,
       karaokePreDisplay: KaraokePreDisplay.oneLineAhead,
       lines: [
-        SubtitleLine(
+        SubtitleLine.withKaraokeMarks(
           index: 0,
           text: 'hello world',
           startMs: 1000,

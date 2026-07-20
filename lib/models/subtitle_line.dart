@@ -1,12 +1,19 @@
 import '../karaoke/karaoke_models.dart';
 
 class SubtitleLine {
-  SubtitleLine({
+  const SubtitleLine({
     required this.index,
     required this.text,
     this.startMs,
     this.endMs,
-    List<KaraokeMark> karaokeMarks = const [],
+  }) : karaokeMarks = const [];
+
+  SubtitleLine.withKaraokeMarks({
+    required this.index,
+    required this.text,
+    this.startMs,
+    this.endMs,
+    required List<KaraokeMark> karaokeMarks,
   }) : karaokeMarks = List.unmodifiable(karaokeMarks);
 
   final int index;
@@ -27,28 +34,40 @@ class SubtitleLine {
   SubtitleLine copyWith({int? startMs, int? endMs}) {
     final nextStartMs = startMs ?? this.startMs;
     final nextEndMs = endMs ?? this.endMs;
+    if (nextStartMs == this.startMs && nextEndMs == this.endMs) {
+      return SubtitleLine.withKaraokeMarks(
+        index: index,
+        text: text,
+        startMs: nextStartMs,
+        endMs: nextEndMs,
+        karaokeMarks: karaokeMarks,
+      );
+    }
     return SubtitleLine(
       index: index,
       text: text,
       startMs: nextStartMs,
       endMs: nextEndMs,
-      karaokeMarks: nextStartMs == this.startMs && nextEndMs == this.endMs
-          ? karaokeMarks
-          : const [],
     );
   }
 
   /// Replaces both timestamps outright, including with null — unlike
   /// [copyWith], which can't be used to clear a single field back to null.
   SubtitleLine withExactTimestamps({int? startMs, int? endMs}) {
+    if (startMs == this.startMs && endMs == this.endMs) {
+      return SubtitleLine.withKaraokeMarks(
+        index: index,
+        text: text,
+        startMs: startMs,
+        endMs: endMs,
+        karaokeMarks: karaokeMarks,
+      );
+    }
     return SubtitleLine(
       index: index,
       text: text,
       startMs: startMs,
       endMs: endMs,
-      karaokeMarks: startMs == this.startMs && endMs == this.endMs
-          ? karaokeMarks
-          : const [],
     );
   }
 
@@ -57,12 +76,20 @@ class SubtitleLine {
   }
 
   SubtitleLine withText(String text) {
+    if (text == this.text) {
+      return SubtitleLine.withKaraokeMarks(
+        index: index,
+        text: text,
+        startMs: startMs,
+        endMs: endMs,
+        karaokeMarks: karaokeMarks,
+      );
+    }
     return SubtitleLine(
       index: index,
       text: text,
       startMs: startMs,
       endMs: endMs,
-      karaokeMarks: text == this.text ? karaokeMarks : const [],
     );
   }
 
@@ -70,7 +97,7 @@ class SubtitleLine {
     required int startMs,
     required List<KaraokeMark> marks,
   }) {
-    return SubtitleLine(
+    return SubtitleLine.withKaraokeMarks(
       index: index,
       text: text,
       startMs: startMs,
@@ -101,7 +128,7 @@ class SubtitleLine {
       }
     }
 
-    return SubtitleLine(
+    return SubtitleLine.withKaraokeMarks(
       index: json['index'] as int,
       text: json['text'] as String,
       startMs: json['startMs'] as int?,

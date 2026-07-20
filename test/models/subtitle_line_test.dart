@@ -6,7 +6,7 @@ void main() {
   const marks = [KaraokeMark(unitText: 'hello', startMs: 100)];
 
   test('ordinary copyWith preserves marks when timestamps do not change', () {
-    final line = SubtitleLine(
+    final line = SubtitleLine.withKaraokeMarks(
       index: 0,
       text: 'hello',
       startMs: 100,
@@ -19,7 +19,7 @@ void main() {
   });
 
   test('timestamp changes and clearing invalidate karaoke marks', () {
-    final line = SubtitleLine(
+    final line = SubtitleLine.withKaraokeMarks(
       index: 0,
       text: 'hello',
       startMs: 100,
@@ -38,7 +38,7 @@ void main() {
   test(
     'changing text invalidates marks while unchanged text preserves them',
     () {
-      final line = SubtitleLine(
+      final line = SubtitleLine.withKaraokeMarks(
         index: 0,
         text: 'hello',
         startMs: 100,
@@ -56,7 +56,11 @@ void main() {
     final source = <KaraokeMark>[
       const KaraokeMark(unitText: 'hello', startMs: 100),
     ];
-    final line = SubtitleLine(index: 0, text: 'hello', karaokeMarks: source);
+    final line = SubtitleLine.withKaraokeMarks(
+      index: 0,
+      text: 'hello',
+      karaokeMarks: source,
+    );
     final initialHash = line.hashCode;
 
     source.add(const KaraokeMark(unitText: 'world', startMs: 150));
@@ -120,7 +124,11 @@ void main() {
 
   test('equality includes karaoke marks', () {
     expect(
-      SubtitleLine(index: 0, text: 'hello', karaokeMarks: marks),
+      SubtitleLine.withKaraokeMarks(
+        index: 0,
+        text: 'hello',
+        karaokeMarks: marks,
+      ),
       isNot(SubtitleLine(index: 0, text: 'hello')),
     );
   });
