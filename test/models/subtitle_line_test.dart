@@ -8,29 +8,52 @@ void main() {
   });
 
   test('isFullyMarked is true when both timestamps are set', () {
-    const line = SubtitleLine(index: 0, text: 'hello', startMs: 100, endMs: 200);
+    const line = SubtitleLine(
+      index: 0,
+      text: 'hello',
+      startMs: 100,
+      endMs: 200,
+    );
     expect(line.isFullyMarked, isTrue);
   });
 
   test('copyWith only overrides provided fields', () {
     const line = SubtitleLine(index: 0, text: 'hello', startMs: 100);
     final updated = line.copyWith(endMs: 200);
-    expect(updated, const SubtitleLine(index: 0, text: 'hello', startMs: 100, endMs: 200));
+    expect(
+      updated,
+      const SubtitleLine(index: 0, text: 'hello', startMs: 100, endMs: 200),
+    );
   });
 
   test('withExactTimestamps replaces both fields even with null', () {
-    const line = SubtitleLine(index: 0, text: 'hello', startMs: 100, endMs: 200);
+    const line = SubtitleLine(
+      index: 0,
+      text: 'hello',
+      startMs: 100,
+      endMs: 200,
+    );
     final updated = line.withExactTimestamps(startMs: 50);
     expect(updated, const SubtitleLine(index: 0, text: 'hello', startMs: 50));
   });
 
   test('clearTimestamps resets both to null', () {
-    const line = SubtitleLine(index: 0, text: 'hello', startMs: 100, endMs: 200);
+    const line = SubtitleLine(
+      index: 0,
+      text: 'hello',
+      startMs: 100,
+      endMs: 200,
+    );
     expect(line.clearTimestamps(), const SubtitleLine(index: 0, text: 'hello'));
   });
 
   test('toJson/fromJson round-trip with timestamps set', () {
-    const line = SubtitleLine(index: 3, text: 'hi there', startMs: 1000, endMs: 2500);
+    const line = SubtitleLine(
+      index: 3,
+      text: 'hi there',
+      startMs: 1000,
+      endMs: 2500,
+    );
     final restored = SubtitleLine.fromJson(line.toJson());
     expect(restored, line);
   });
@@ -39,5 +62,34 @@ void main() {
     const line = SubtitleLine(index: 3, text: 'hi there');
     final restored = SubtitleLine.fromJson(line.toJson());
     expect(restored, line);
+  });
+
+  test('hasInvalidRange rejects negative and non-positive ranges', () {
+    expect(
+      const SubtitleLine(
+        index: 0,
+        text: 'negative',
+        startMs: -1,
+      ).hasInvalidRange,
+      isTrue,
+    );
+    expect(
+      const SubtitleLine(
+        index: 0,
+        text: 'backwards',
+        startMs: 200,
+        endMs: 100,
+      ).hasInvalidRange,
+      isTrue,
+    );
+    expect(
+      const SubtitleLine(
+        index: 0,
+        text: 'valid',
+        startMs: 100,
+        endMs: 200,
+      ).hasInvalidRange,
+      isFalse,
+    );
   });
 }

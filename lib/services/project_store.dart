@@ -8,7 +8,9 @@ class ProjectStore {
 
   static Future<void> save(Project project, String filePath) async {
     final file = File(filePath);
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(project.toJson()));
+    await file.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(project.toJson()),
+    );
   }
 
   static Future<Project> load(String filePath) async {

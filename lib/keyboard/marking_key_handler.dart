@@ -25,7 +25,8 @@ class MarkingKeyHandler {
         session.markEnd(getPositionMs());
         return true;
       }
-    } else if (event.logicalKey == LogicalKeyboardKey.backspace && event is KeyDownEvent) {
+    } else if (event.logicalKey == LogicalKeyboardKey.backspace &&
+        event is KeyDownEvent) {
       final seekTarget = session.redoCurrentLine();
       final fallback = getPositionMs() - redoFallbackOffsetMs;
       seekTo(seekTarget ?? (fallback < 0 ? 0 : fallback));

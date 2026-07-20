@@ -7,7 +7,11 @@ import '../../support/fake_playback_controls.dart';
 void main() {
   testWidgets('tapping play/pause toggles playback', (tester) async {
     final controls = FakePlaybackControls();
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PlayerControlsBar(controls: controls))));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlayerControlsBar(controls: controls)),
+      ),
+    );
 
     await tester.tap(find.byKey(const ValueKey('play-pause-button')));
     await tester.pump();
@@ -20,7 +24,11 @@ void main() {
 
   testWidgets('selecting a rate calls setRate', (tester) async {
     final controls = FakePlaybackControls();
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PlayerControlsBar(controls: controls))));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlayerControlsBar(controls: controls)),
+      ),
+    );
 
     await tester.tap(find.byKey(const ValueKey('rate-dropdown')));
     await tester.pumpAndSettle();

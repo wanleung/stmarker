@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/marking_session.dart';
+import '../format_timestamp.dart';
 
 class LineListView extends StatefulWidget {
   const LineListView({super.key, required this.onRowTap});
@@ -26,15 +27,6 @@ class _LineListViewState extends State<LineListView> {
     super.dispose();
   }
 
-  String _formatMs(int? ms) {
-    if (ms == null) return '—';
-    final duration = Duration(milliseconds: ms);
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final millis = duration.inMilliseconds.remainder(1000).toString().padLeft(3, '0');
-    return '$minutes:$seconds.$millis';
-  }
-
   @override
   Widget build(BuildContext context) {
     final session = context.watch<MarkingSession>();
@@ -42,7 +34,9 @@ class _LineListViewState extends State<LineListView> {
     final currentIndex = session.currentIndex;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (currentIndex != null && currentIndex != _lastScrolledIndex && _scrollController.hasClients) {
+      if (currentIndex != null &&
+          currentIndex != _lastScrolledIndex &&
+          _scrollController.hasClients) {
         _scrollController.animateTo(
           currentIndex * _rowHeight,
           duration: const Duration(milliseconds: 200),
@@ -59,15 +53,46 @@ class _LineListViewState extends State<LineListView> {
       itemBuilder: (context, index) {
         final line = lines[index];
         final isCurrent = index == currentIndex;
+        final overlapsPrevious =
+            index > 0 &&
+            line.startMs != null &&
+            lines[index - 1].endMs != null &&
+            line.startMs! < lines[index - 1].endMs!;
+        final hasTimingIssue = line.hasInvalidRange || overlapsPrevious;
         return Material(
-          color: isCurrent ? Theme.of(context).colorScheme.primaryContainer : null,
+          color: isCurrent
+              ? Theme.of(context).colorScheme.primaryContainer
+              : null,
           child: ListTile(
             key: ValueKey('line-row-$index'),
             dense: true,
             onTap: () => widget.onRowTap(index),
-            leading: SizedBox(width: 40, child: Text('${index + 1}', textAlign: TextAlign.right)),
+            leading: SizedBox(
+              width: 40,
+              child: Text('${index + 1}', textAlign: TextAlign.right),
+            ),
             title: Text(line.text, overflow: TextOverflow.ellipsis),
-            subtitle: Text('${_formatMs(line.startMs)} → ${_formatMs(line.endMs)}'),
+            shape: hasTimingIssue
+                ? RoundedRectangleBorder(
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  )
+                : null,
+            trailing: hasTimingIssue
+                ? Tooltip(
+                    message: overlapsPrevious
+                        ? 'Starts before the previous line ends'
+                        : 'Invalid timestamp range',
+                    child: Icon(
+                      Icons.error_outline,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  )
+                : null,
+            subtitle: Text(
+              '${formatDisplayTimestamp(line.startMs)} → ${formatDisplayTimestamp(line.endMs)}',
+            ),
           ),
         );
       },

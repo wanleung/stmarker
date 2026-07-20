@@ -9,7 +9,11 @@ void main() {
   });
 
   test('copyWith only overrides provided fields', () {
-    const project = Project(mediaPath: '/tmp/a.mp3', playbackRate: 1.0, lines: []);
+    const project = Project(
+      mediaPath: '/tmp/a.mp3',
+      playbackRate: 1.0,
+      lines: [],
+    );
     final updated = project.copyWith(playbackRate: 0.75);
     expect(updated.mediaPath, '/tmp/a.mp3');
     expect(updated.playbackRate, 0.75);
