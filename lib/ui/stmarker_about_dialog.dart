@@ -19,6 +19,11 @@ void showStmarkerAboutDialog(BuildContext context) {
       ),
       SizedBox(height: 12),
       Text('Built with Flutter, media_kit, libmpv, and FFmpeg.'),
+      SizedBox(height: 12),
+      Text(
+        'Bundled Noto fonts are copyright their respective authors and are '
+        'provided under the SIL Open Font License 1.1.',
+      ),
     ],
   );
 }

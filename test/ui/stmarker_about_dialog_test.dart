@@ -24,5 +24,7 @@ void main() {
     expect(find.text(stmarkerVersion), findsOneWidget);
     expect(find.textContaining('GPL-3.0-or-later'), findsOneWidget);
     expect(find.textContaining('creating subtitled videos'), findsOneWidget);
+    expect(find.textContaining('Noto fonts'), findsOneWidget);
+    expect(find.textContaining('SIL Open Font License'), findsOneWidget);
   });
 }

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../models/subtitle_line.dart';
 import '../player/media_player_controller.dart';
+import '../services/ass_export_coordinator.dart';
 import '../services/ffmpeg_export_service.dart';
 import '../services/lrc_codec.dart';
 import '../services/project_store.dart';
@@ -207,6 +208,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final incompleteCount = session.lines
         .where((line) => !line.isFullyMarked)
         .length;
+    return _confirmExportWarningCounts(invalidCount, incompleteCount);
+  }
+
+  Future<bool> _confirmExportWarningCounts(
+    int invalidCount,
+    int incompleteCount,
+  ) async {
     if (invalidCount > 0 || incompleteCount > 0) {
       final exportAnyway = await showDialog<bool>(
         context: context,
@@ -234,6 +242,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return true;
   }
 
+  Future<Uint8List> _loadAssetBytes(String assetPath) async {
+    final data = await rootBundle.load(assetPath);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
   Future<void> _exportSrt(MarkingSession session) async {
     if (!await _confirmExportWarnings(session)) return;
 
@@ -243,6 +256,51 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (path == null) return;
     await File(path).writeAsString(SrtCodec.encode(session.lines));
+  }
+
+  Future<void> _exportAss(MarkingSession session) async {
+    final path = await FilePicker.saveFile(
+      dialogTitle: 'Export ASS',
+      fileName: 'export.ass',
+    );
+    if (path == null || !mounted) return;
+
+    final exported = await AssExportCoordinator().export(
+      outputPath: path,
+      lines: session.lines,
+      face: SubtitleFontCatalog.byId(session.project.subtitleFontFamily),
+      fontSize: session.project.subtitleFontSize,
+      loadAsset: _loadAssetBytes,
+      confirmWarnings: _confirmExportWarningCounts,
+      confirmCompanionReplacement: (companionPath) async {
+        final replace = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Replace companion fonts?'),
+            content: Text(
+              'The companion folder already exists:\n$companionPath\n\n'
+              'Replace it and its contents?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Replace'),
+              ),
+            ],
+          ),
+        );
+        return replace == true;
+      },
+    );
+    if (exported && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('ASS subtitles exported to $path')),
+      );
+    }
   }
 
   Future<void> _exportVideo(MarkingSession session) async {
@@ -348,13 +406,7 @@ class _HomeScreenState extends State<HomeScreen> {
           session.project.subtitleFontFamily,
         ),
         subtitleFontSize: session.project.subtitleFontSize,
-        loadAsset: (assetPath) async {
-          final data = await rootBundle.load(assetPath);
-          return data.buffer.asUint8List(
-            data.offsetInBytes,
-            data.lengthInBytes,
-          );
-        },
+        loadAsset: _loadAssetBytes,
         onProgress: (value) => progress.value = value,
       );
       if (mounted) {
@@ -433,6 +485,12 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.download),
             onPressed: () =>
                 _runAction('Export SRT', () => _exportSrt(session)),
+          ),
+          IconButton(
+            tooltip: 'Export ASS',
+            icon: const Icon(Icons.font_download_outlined),
+            onPressed: () =>
+                _runAction('Export ASS', () => _exportAss(session)),
           ),
           IconButton(
             tooltip: 'Export subtitled video',

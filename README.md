@@ -17,7 +17,9 @@ not upload media or subtitle text.
 - Edit timestamps directly when not in review mode.
 - Save and reopen `.stmproj` project files.
 - Relocate media when a saved project references a moved file.
+- Choose a bundled Noto Sans, Serif, or Monospace face and subtitle size.
 - Export standard SRT subtitles, including partially completed projects.
+- Export styled ASS subtitles with a portable font-and-licence companion folder.
 - Detect invalid and overlapping timestamp ranges.
 - Add a selectable subtitle track without re-encoding the video.
 - Burn subtitles permanently into a video with FFmpeg.
@@ -128,12 +130,16 @@ x86_64; other architectures need a matching `linuxdeploy` build.
    resume marking from the first flagged line.
 5. Outside review mode, select any row to seek to it and edit its millisecond
    timestamps directly.
-6. Save the work as an `.stmproj` project, export SRT, or export a subtitled
-   video.
+6. Use **Subtitle appearance** to choose the typeface and size, then save the
+   work as an `.stmproj` project, export SRT or ASS, or export a subtitled video.
 
 Invalid ranges and overlaps are shown in the line list. Export remains
 possible after acknowledging warnings; incomplete lines are omitted from the
-generated SRT.
+generated subtitle file. SRT does not store font or size settings, so its
+appearance is controlled by the player. **Export ASS** retains those settings
+and writes a sibling `<name>_fonts` folder containing the selected font and its
+licence. Install or attach that font when moving the ASS file into another
+editor or playback environment; keep the companion folder with the ASS file.
 
 ## Video export
 
@@ -149,12 +155,18 @@ subtitle tracks. The app prevents the output path from overwriting the source,
 shows progress, supports cancellation, and removes its temporary subtitle
 file when finished.
 
+Burned-in export uses the selected font and size, so the result matches the
+subtitle preview without requiring the viewer to install a font. Selectable
+subtitle tracks use the container's subtitle format and, like standalone SRT,
+leave presentation to the player.
+
 ## Project format
 
 An `.stmproj` file is readable JSON containing:
 
 - the absolute path to the media file;
-- the selected playback rate; and
+- the selected playback rate;
+- the subtitle font family and size; and
 - subtitle text with start and end timestamps.
 
 The media itself is not copied into the project. If it moves, the app asks you
@@ -199,5 +211,10 @@ Copyright © 2026 Subtitle Marker contributors.
 
 This project is licensed under the GNU General Public License, version 3 or
 later. See [LICENSE](LICENSE) for the full text.
+
+The bundled Noto Sans CJK SC, Noto Serif CJK SC, and Noto Sans Mono CJK SC
+fonts are distributed under the SIL Open Font License 1.1; see
+[`assets/fonts/OFL.txt`](assets/fonts/OFL.txt). Bundling these fonts increases
+the installed application size by approximately 57 MB.
 
 SPDX-License-Identifier: GPL-3.0-or-later
