@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../subtitle_fonts/subtitle_font_catalog.dart';
+import 'asset_bytes_loader.dart';
+
 enum SubtitleVideoMode { embedded, burnedIn }
 
 class FfmpegExportException implements Exception {
@@ -13,8 +16,42 @@ class FfmpegExportException implements Exception {
   String toString() => message;
 }
 
+abstract interface class FfmpegProcess {
+  Stream<List<int>> get stdout;
+  Stream<List<int>> get stderr;
+  Future<int> get exitCode;
+  bool kill(ProcessSignal signal);
+}
+
+typedef FfmpegProcessStarter =
+    Future<FfmpegProcess> Function(String executable, List<String> arguments);
+
+final class _SystemFfmpegProcess implements FfmpegProcess {
+  const _SystemFfmpegProcess(this.process);
+
+  final Process process;
+
+  @override
+  Stream<List<int>> get stdout => process.stdout;
+  @override
+  Stream<List<int>> get stderr => process.stderr;
+  @override
+  Future<int> get exitCode => process.exitCode;
+  @override
+  bool kill(ProcessSignal signal) => process.kill(signal);
+}
+
+Future<FfmpegProcess> _startSystemProcess(
+  String executable,
+  List<String> arguments,
+) async => _SystemFfmpegProcess(await Process.start(executable, arguments));
+
 class FfmpegExportService {
-  Process? _process;
+  FfmpegExportService({FfmpegProcessStarter? startProcess})
+    : _startProcess = startProcess ?? _startSystemProcess;
+
+  final FfmpegProcessStarter _startProcess;
+  FfmpegProcess? _process;
   bool _cancelRequested = false;
 
   bool get isRunning => _process != null;
@@ -34,6 +71,9 @@ class FfmpegExportService {
     required String subtitleContent,
     required SubtitleVideoMode mode,
     required int durationMs,
+    required SubtitleFontFace subtitleFont,
+    required double subtitleFontSize,
+    required AssetBytesLoader loadAsset,
     void Function(double progress)? onProgress,
   }) async {
     if (isRunning) {
@@ -49,20 +89,34 @@ class FfmpegExportService {
     final tempDirectory = await Directory.systemTemp.createTemp(
       'stmarker_ffmpeg_',
     );
-    final subtitleFile = File(
-      '${tempDirectory.path}${Platform.pathSeparator}subtitles.srt',
-    );
-    await subtitleFile.writeAsString(subtitleContent);
-
     final stderrTail = <String>[];
     try {
+      final subtitleFile = File(
+        '${tempDirectory.path}${Platform.pathSeparator}subtitles.srt',
+      );
+      await subtitleFile.writeAsString(subtitleContent);
+      if (mode == SubtitleVideoMode.burnedIn) {
+        await File(
+          '${tempDirectory.path}${Platform.pathSeparator}${_basename(subtitleFont.assetPath)}',
+        ).writeAsBytes(await loadAsset(subtitleFont.assetPath), flush: true);
+        await File(
+          '${tempDirectory.path}${Platform.pathSeparator}OFL.txt',
+        ).writeAsBytes(await loadAsset('assets/fonts/OFL.txt'), flush: true);
+      }
       final arguments = buildArguments(
         inputPath: inputPath,
         subtitlePath: subtitleFile.path,
         outputPath: outputPath,
         mode: mode,
+        fontsDirectory: mode == SubtitleVideoMode.burnedIn
+            ? tempDirectory.path
+            : null,
+        fontFamily: mode == SubtitleVideoMode.burnedIn
+            ? subtitleFont.familyName
+            : null,
+        fontSize: mode == SubtitleVideoMode.burnedIn ? subtitleFontSize : null,
       );
-      final process = await Process.start('ffmpeg', arguments);
+      final process = await _startProcess('ffmpeg', arguments);
       _process = process;
 
       final stderrDone = process.stderr
@@ -111,15 +165,27 @@ class FfmpegExportService {
     required String subtitlePath,
     required String outputPath,
     required SubtitleVideoMode mode,
+    String? fontsDirectory,
+    String? fontFamily,
+    double? fontSize,
   }) {
     if (mode == SubtitleVideoMode.burnedIn) {
+      if (fontsDirectory == null || fontFamily == null || fontSize == null) {
+        throw ArgumentError(
+          'Burned-in subtitles require a font directory, family, and size.',
+        );
+      }
+      final style =
+          'FontName=$fontFamily,FontSize=${_formatFontSize(fontSize)}';
       return [
         '-hide_banner',
         '-y',
         '-i',
         inputPath,
         '-vf',
-        "subtitles=filename='${escapeFilterPath(subtitlePath)}'",
+        "subtitles=filename='${escapeFilterValue(subtitlePath)}'"
+            ":fontsdir='${escapeFilterValue(fontsDirectory)}'"
+            ":force_style='${escapeFilterValue(style)}'",
         '-c:v',
         'libx264',
         '-preset',
@@ -161,13 +227,23 @@ class FfmpegExportService {
     ];
   }
 
-  static String escapeFilterPath(String path) => path
+  static String escapeFilterPath(String path) => escapeFilterValue(path);
+
+  static String escapeFilterValue(String value) => value
       .replaceAll(r'\', r'\\')
       .replaceAll(':', r'\:')
       .replaceAll("'", r"\'")
       .replaceAll(',', r'\,')
       .replaceAll('[', r'\[')
       .replaceAll(']', r'\]');
+
+  static String _formatFontSize(double size) =>
+      size == size.roundToDouble() ? size.toInt().toString() : size.toString();
+
+  static String _basename(String path) {
+    final normalized = path.replaceAll(r'\', '/');
+    return normalized.substring(normalized.lastIndexOf('/') + 1);
+  }
 
   static int? parseProgressMs(String ffmpegLine) {
     final match = RegExp(
